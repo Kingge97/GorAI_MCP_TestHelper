@@ -1,0 +1,39 @@
+{
+  "mcp_server": {
+    "host": "localhost",
+    "port": 8888
+  },
+  "web_server": {
+    "host": "localhost",
+    "port": 5000,
+    "debug": true
+  },
+  "llm": {
+    "api_key": "your api key",
+    "base_url": "your base url",
+    "models": [
+      {
+        "id": "qwen-max",
+        "name": "千问MAX",
+        "description": ""
+      },
+      {
+        "id": "qwen3-235b-a22b",
+        "name": "千问3-A235B",
+        "description": ""
+      },
+      {
+        "id": "deepseek-r1-0528",
+        "name": "deepseekR1-0528",
+        "description": ""
+      }
+    ],
+    "default_model": "qwen-max",
+    "stream": true
+  },
+  "ui": {
+    "title": "MCP工具助手",
+    "theme": "light",
+    "auto_scroll": true
+  }
+}

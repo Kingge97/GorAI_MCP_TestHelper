@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP工具助手</title>
+    <style>
+        /* Apple-inspired UI for MCP Tool Assistant */
+
+        :root {
+            --primary-color: #007AFF;
+            --secondary-color: #5856D6;
+            --success-color: #34C759;
+            --warning-color: #FF9500;
+            --error-color: #FF3B30;
+            --background-primary: #FFFFFF;
+            --background-secondary: #F2F2F7;
+            --background-tertiary: #FFFFFF;
+            --text-primary: #000000;
+            --text-secondary: #8E8E93;
+            --border-color: #C6C6C8;
+            --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.1);
+            --shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.15);
+            --shadow-heavy: 0 8px 25px rgba(0, 0, 0, 0.2);
+            --radius-small: 8px;
+            --radius-medium: 12px;
+            --radius-large: 16px;
+            --blur: blur(20px);
+        }
+
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --background-primary: #000000;
+                --background-secondary: #1C1C1E;
+                --background-tertiary: #2C2C2E;
+                --text-primary: #FFFFFF;
+                --text-secondary: #8E8E93;
+                --border-color: #3A3A3C;
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background-secondary);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* 侧边栏样式 - 修复布局 */
+        .sidebar {
+            width: 320px;
+            background: var(--background-primary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            height: 100vh; /* 确保侧边栏占满整个视口高度 */
+            overflow: hidden; /* 防止整个侧边栏溢出 */
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            flex-shrink: 0; /* 防止头部被压缩 */
+        }
+
+        .sidebar-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .tools-counter {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden; /* 防止内容溢出 */
+            min-height: 0; /* 允许flex子元素缩小 */
+        }
+
+        .search-box {
+            margin-bottom: 20px;
+            flex-shrink: 0; /* 防止搜索框被压缩 */
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-medium);
+            background: var(--background-secondary);
+            color: var(--text-primary);
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        }
+
+        .tools-list {
+            flex: 1;
+            overflow-y: auto; /* 只有工具列表可以滚动 */
+            margin-bottom: 20px;
+            min-height: 0; /* 允许flex子元素缩小 */
+        }
+
+        .tool-item {
+            padding: 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-medium);
+            margin-bottom: 12px;
+            background: var(--background-tertiary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            flex-shrink: 0; /* 防止工具项被压缩 */
+        }
+
+        .tool-item:hover {
+            background: var(--background-secondary);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-light);
+        }
+
+        .tool-item.selected {
+            border-color: var(--primary-color);
+            background: rgba(0, 122, 255, 0.05);
+        }
+
+        .tool-item.selected::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--primary-color);
+            border-radius: 0 2px 2px 0;
+        }
+
+        .tool-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .tool-checkbox {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--border-color);
+            border-radius: 4px;
+            margin-right: 12px;
+            position: relative;
+            transition: all 0.2s ease;
+        }
+
+        .tool-checkbox.checked {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .tool-checkbox.checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .tool-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            flex: 1;
+        }
+
+        .tool-package {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--background-secondary);
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+
+        .tool-description {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .sidebar-footer {
+            border-top: 1px solid var(--border-color);
+            padding-top: 20px;
+            flex-shrink: 0; /* 防止底部按钮被压缩 */
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            border: none;
+            border-radius: var(--radius-medium);
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-medium);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 主内容区样式 - 修复布局 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--background-secondary);
+            height: 100vh; /* 确保主内容区占满整个视口高度 */
+            overflow: hidden; /* 防止整个主内容区溢出 */
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: var(--background-primary);
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            flex-shrink: 0; /* 防止顶部栏被压缩 */
+        }
+
+        .top-bar-left,
+        .top-bar-center,
+        .top-bar-right {
+            display: flex;
+            align-items: center;
+        }
+
+        .top-bar-center {
+            flex: 1;
+            justify-content: center;
+        }
+
+        .top-bar-right {
+            gap: 16px; /* 右侧元素之间的间距 */
+        }
+
+        .model-selector {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .model-selector label {
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .model-select {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-small);
+            background: var(--background-tertiary);
+            color: var(--text-primary);
+            font-size: 14px;
+            min-width: 200px;
+            cursor: pointer;
+        }
+
+        .model-select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        }
+
+        /* 苹果风格的清空对话按钮 */
+        .btn-clear-chat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: rgba(255, 59, 48, 0.1);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            border-radius: var(--radius-small);
+            color: var(--error-color);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .btn-clear-chat:hover {
+            background: rgba(255, 59, 48, 0.15);
+            border-color: rgba(255, 59, 48, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(255, 59, 48, 0.2);
+        }
+
+        .btn-clear-chat:active {
+            transform: translateY(0);
+            background: rgba(255, 59, 48, 0.2);
+        }
+
+        .btn-clear-chat svg {
+            opacity: 0.8;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--error-color);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.connected {
+            background: var(--success-color);
+        }
+
+        /* 错误信息样式 */
+        .error-info {
+            padding: 20px;
+            background: var(--background-tertiary);
+            border: 1px solid var(--error-color);
+            border-radius: var(--radius-medium);
+            color: var(--text-primary);
+        }
+
+        .error-info h4 {
+            color: var(--error-color);
+            margin-bottom: 16px;
+            font-size: 16px;
+        }
+
+        .error-info h5 {
+            color: var(--text-primary);
+            margin: 16px 0 8px 0;
+            font-size: 14px;
+        }
+
+        .error-info p {
+            margin: 8px 0;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .debug-suggestions {
+            background: var(--background-secondary);
+            padding: 16px;
+            border-radius: var(--radius-small);
+            margin-top: 16px;
+        }
+
+        .debug-suggestions ul {
+            margin: 8px 0 0 16px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .debug-suggestions li {
+            margin: 4px 0;
+            color: var(--text-secondary);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 聊天区域样式 - 修复布局 */
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 0 24px 24px;
+            overflow: hidden; /* 防止聊天容器溢出 */
+            min-height: 0; /* 允许flex子元素缩小 */
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto; /* 只有消息区域可以滚动 */
+            padding: 24px 0;
+            scroll-behavior: smooth;
+            min-height: 0; /* 允许flex子元素缩小 */
+        }
+
+        .welcome-message {
+            text-align: center;
+            padding: 60px 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .welcome-message h3 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .welcome-message p {
+            font-size: 16px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+
+        .quick-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .quick-action {
+            padding: 16px 24px;
+            background: var(--background-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-medium);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+        }
+
+        .quick-action:hover {
+            background: var(--background-secondary);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-light);
+        }
+
+        .message {
+            margin-bottom: 24px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .message.user .message-avatar {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .message.assistant .message-avatar {
+            background: var(--background-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 16px 20px;
+            border-radius: var(--radius-large);
+            line-height: 1.6;
+            font-size: 15px;
+        }
+
+        .message.user .message-content {
+            background: var(--primary-color);
+            color: white;
+            border-bottom-right-radius: 8px;
+        }
+
+        .message.assistant .message-content {
+            background: var(--background-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-bottom-left-radius: 8px;
+        }
+
+        .tool-execution {
+            background: var(--background-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-medium);
+            padding: 16px;
+            margin: 12px 0;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+        }
+
+        .tool-execution-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .tool-execution-result {
+            background: var(--background-primary);
+            border-radius: var(--radius-small);
+            padding: 12px;
+            margin-top: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* 输入区域样式 - 修复布局 */
+        .chat-input-area {
+            background: var(--background-primary);
+            border-radius: var(--radius-large);
+            padding: 16px;
+            box-shadow: var(--shadow-medium);
+            border: 1px solid var(--border-color);
+            flex-shrink: 0; /* 防止输入区域被压缩 */
+        }
+
+        .input-container {
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        #messageInput {
+            flex: 1;
+            border: none;
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 16px;
+            line-height: 1.5;
+            resize: none;
+            max-height: 120px;
+            font-family: inherit;
+        }
+
+        #messageInput:focus {
+            outline: none;
+        }
+
+        #messageInput::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .send-button {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: var(--primary-color);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .send-button:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: var(--shadow-medium);
+        }
+
+        .send-button:disabled {
+            background: var(--text-secondary);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .input-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .separator {
+            opacity: 0.5;
+        }
+
+        /* 弹窗样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: var(--background-primary);
+            border-radius: var(--radius-large);
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: var(--shadow-heavy);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: var(--background-secondary);
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        /* 加载指示器 */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            z-index: 999;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 280px;
+            }
+            
+            .message-content {
+                max-width: 85%;
+            }
+            
+            .chat-container {
+                padding: 0 16px 16px;
+            }
+            
+            .top-bar {
+                padding: 16px;
+            }
+
+            .top-bar-right {
+                gap: 12px;
+            }
+
+            .btn-clear-chat {
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+        }
+
+        /* 动画效果 */
+        .fade-in {
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .slide-in {
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* 文本选择样式 */
+        ::selection {
+            background: rgba(0, 122, 255, 0.2);
+        }
+
+        /* 焦点样式 */
+        .tool-item:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        /* 状态指示器 */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 16px 20px;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 2px;
+        }
+
+        .typing-dot {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            animation: typingDot 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typingDot {
+            0%, 60%, 100% { opacity: 0.3; }
+            30% { opacity: 1; }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>MCP工具</h2>
+                <div class="tools-counter">
+                    <span id="selectedCount">0</span> / <span id="totalCount">0</span>
+                </div>
+            </div>
+            
+            <div class="sidebar-content">
+                <div class="search-box">
+                    <input type="text" id="toolSearch" placeholder="搜索工具...">
+                </div>
+                
+                <div class="tools-list" id="toolsList">
+                    <div class="loading">正在加载工具...</div>
+                </div>
+                
+                <div class="sidebar-footer">
+                    <button class="btn-primary" id="applyTools">应用选择</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="top-bar">
+                <div class="top-bar-left">
+                    <div class="model-selector">
+                        <label for="modelSelect">模型:</label>
+                        <select id="modelSelect" class="model-select">
+                            <option value="">选择模型...</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="top-bar-center">
+                    <!-- 中间区域保持空白或放置其他元素 -->
+                </div>
+                
+                <div class="top-bar-right">
+                    <button class="btn-clear-chat" id="clearChatButton" title="清空对话">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                    
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="statusText">未连接</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 聊天区域 -->
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="welcome-message">
+                        <h3>👋 欢迎使用MCP工具助手</h3>
+                        <p>请先在左侧选择要使用的工具，然后选择AI模型开始对话。</p>
+                        <div class="quick-actions">
+                            <button class="quick-action" onclick="insertMessage('帮我计算 25 * 36 + 78')">
+                                计算数学表达式
+                            </button>
+                            <button class="quick-action" onclick="insertMessage('分析这段文本的统计信息')">
+                                文本分析
+                            </button>
+                            <button class="quick-action" onclick="insertMessage('显示当前系统信息')">
+                                系统信息
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="chat-input-area">
+                    <div class="input-container">
+                        <textarea 
+                            id="messageInput" 
+                            placeholder="输入消息..." 
+                            rows="1"
+                            maxlength="4000"
+                        ></textarea>
+                        <button id="sendButton" class="send-button" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="input-info">
+                        <span id="charCount">0/4000</span>
+                        <span class="separator">•</span>
+                        <span id="toolsInfo">未选择工具</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工具执行弹窗 -->
+    <div class="modal" id="toolModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>工具执行</h3>
+                <button class="modal-close" onclick="closeToolModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="tool-execution-info" id="toolExecutionInfo"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载指示器 -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
