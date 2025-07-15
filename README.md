@@ -1,12 +1,15 @@
 #项目简介
+
 一个简易的MCP工具开发、调试的工具，主要用于半封闭网络环境下，快速开发与测试MCP工具。
 ![界面图](pic/pic-1.png)
 
 
 #运行环境
+
 python version>=3.12.8
 
 #快速开始
+
 将代码复制到本地目录
 终端运行
 pip install -r requirements.txt
@@ -21,9 +24,11 @@ python start_all.py
 即可访问
 
 #对话界面使用
+
 ![对话界面使用图](pic/pic-2.png)
 
 #工具编写
+
 在tools文件夹下新建.py文件
 随后函数参照如下格式：
 
@@ -43,12 +48,14 @@ return 返回值
 编写完毕后，重启服务，左侧即可加载MCP工具
 
 #参数配置
+
 config.json中可进行参数配置
 mcp_server为mcp服务器开放的IP和端口
 web_server为web服务器开放的IP和端口
 llm可配置模型相关的内容，其中id为连接参数的modelName，name和description显示在模型选择界面
 
 #版本计划
+
 当前版本 v0.0.1.4
 后续计划更新：
 1.针对思考内容的语句输出
