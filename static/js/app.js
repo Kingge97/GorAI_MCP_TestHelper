@@ -13,6 +13,12 @@ class MCPApp {
         this.sessionId = null;
         this.messageHistory = [];  // 本地消息历史备份
         
+        // 添加系统提示词
+        this.systemPrompt = '';
+        
+        // 添加工具调用计数器，避免ID重复
+        this.toolCallCounter = 0;
+        
         this.init();
     }
     
@@ -313,10 +319,15 @@ class MCPApp {
             this.clearChat();
         });
         
+        // 系统提示词按钮
+        document.getElementById('systemPromptButton').addEventListener('click', () => {
+            this.showSystemPromptModal();
+        });
+        
         // 点击聊天区域关闭弹窗
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('modal')) {
-                this.closeToolModal();
+                this.closeModal(e.target);
             }
         });
     }
@@ -379,7 +390,8 @@ class MCPApp {
                 body: JSON.stringify({
                     message: message,
                     model: this.currentModel,
-                    session_id: this.sessionId  // 发送会话ID
+                    session_id: this.sessionId,  // 发送会话ID
+                    system_prompt: this.systemPrompt  // 发送系统提示词
                 })
             });
             
@@ -410,11 +422,13 @@ class MCPApp {
     
     async handleStreamResponse(response, typingId) {
         const reader = response.body.getReader();
-        const decoder = new TextDecoder();
+        // 明确指定UTF-8解码器
+        const decoder = new TextDecoder('utf-8');
         
         let assistantMessageElement = null;
         let currentContent = '';
         let typingIndicatorRemoved = false; // 标记是否已移除思考中提示
+        let isAfterToolCall = false; // 标记是否在工具调用之后
         
         try {
             while (true) {
@@ -422,7 +436,7 @@ class MCPApp {
                 
                 if (done) break;
                 
-                const chunk = decoder.decode(value);
+                const chunk = decoder.decode(value, { stream: true });
                 const lines = chunk.split('\n');
                 
                 for (const line of lines) {
@@ -432,6 +446,7 @@ class MCPApp {
                         
                         try {
                             const parsed = JSON.parse(data);
+                            console.log('收到流数据:', parsed);
                             
                             if (parsed.type === 'content') {
                                 // 第一次收到内容时，移除思考中提示
@@ -440,23 +455,38 @@ class MCPApp {
                                     typingIndicatorRemoved = true;
                                 }
                                 
+                                // 如果是工具调用后的内容，创建新的消息元素
+                                if (isAfterToolCall && (!assistantMessageElement || currentContent.includes('思考过程'))) {
+                                    assistantMessageElement = this.addMessage('assistant', '');
+                                    currentContent = '';
+                                    isAfterToolCall = false;
+                                }
+                                
                                 if (!assistantMessageElement) {
                                     assistantMessageElement = this.addMessage('assistant', '');
                                 }
                                 currentContent += parsed.content;
                                 this.updateMessageContent(assistantMessageElement, currentContent);
-                            } else if (parsed.type === 'tool_calls') {
+                            } 
+                            else if (parsed.type === 'tool_calls') {
+                                console.log('处理工具调用:', parsed.tool_calls);
                                 // 如果有工具调用但还没移除思考中提示，移除它
                                 if (!typingIndicatorRemoved) {
                                     this.removeTypingIndicator(typingId);
                                     typingIndicatorRemoved = true;
                                 }
                                 this.showToolExecution(parsed.tool_calls);
-                            } else if (parsed.type === 'tool_execution') {
-                                this.updateToolExecution(parsed.tool_name, '执行中...', parsed.args);
-                            } else if (parsed.type === 'tool_result') {
-                                this.updateToolExecution(parsed.tool_name, parsed.result);
-                            } else if (parsed.type === 'error') {
+                                isAfterToolCall = true; // 标记后续内容需要新的消息元素
+                            } 
+                            else if (parsed.type === 'tool_execution') {
+                                console.log('工具执行中:', parsed);
+                                this.updateToolExecution(parsed.tool_call_id || parsed.tool_name, '执行中...', parsed.args);
+                            } 
+                            else if (parsed.type === 'tool_result') {
+                                console.log('工具执行结果:', parsed);
+                                this.updateToolExecution(parsed.tool_call_id || parsed.tool_name, parsed.result);
+                            } 
+                            else if (parsed.type === 'error') {
                                 // 出错时也要移除思考中提示
                                 if (!typingIndicatorRemoved) {
                                     this.removeTypingIndicator(typingId);
@@ -467,7 +497,9 @@ class MCPApp {
                                 }
                                 currentContent += `\n\n❌ 错误: ${parsed.message}`;
                                 this.updateMessageContent(assistantMessageElement, currentContent);
-                            } else if (parsed.type === 'end') {
+                            } 
+                            else if (parsed.type === 'end') {
+                                console.log('流结束');
                                 break;
                             }
                         } catch (e) {
@@ -570,39 +602,71 @@ class MCPApp {
     showToolExecution(toolCalls) {
         const messagesContainer = document.getElementById('chatMessages');
         
+        console.log('显示工具执行:', toolCalls);
+        
         toolCalls.forEach(toolCall => {
+            // 使用唯一ID，包含时间戳和计数器
+            const uniqueId = `tool-${Date.now()}-${this.toolCallCounter++}`;
+            
             const toolDiv = document.createElement('div');
             toolDiv.className = 'tool-execution fade-in';
-            toolDiv.id = `tool-${toolCall.function.name}`;
+            toolDiv.id = uniqueId;
+            
+            // 存储tool call ID供后续更新使用
+            toolDiv.dataset.toolCallId = toolCall.id;
+            toolDiv.dataset.toolName = toolCall.function.name;
+            
+            // 格式化参数显示
+            let argsDisplay = '';
+            try {
+                const args = JSON.parse(toolCall.function.arguments);
+                argsDisplay = `<pre>${JSON.stringify(args, null, 2)}</pre>`;
+            } catch (e) {
+                argsDisplay = toolCall.function.arguments;
+            }
             
             toolDiv.innerHTML = `
                 <div class="tool-execution-header">
-                    🔧 执行工具: ${toolCall.function.name}
+                    🔧 执行工具: <strong>${toolCall.function.name}</strong>
+                </div>
+                <div class="tool-execution-args">
+                    <strong>参数:</strong> ${argsDisplay}
                 </div>
                 <div class="tool-execution-result">准备执行...</div>
             `;
             
             messagesContainer.appendChild(toolDiv);
+            console.log('工具执行元素已创建:', uniqueId, toolCall.id);
         });
         
         this.scrollToBottom();
     }
     
-    updateToolExecution(toolName, result, args = null) {
-        const toolElement = document.getElementById(`tool-${toolName}`);
-        if (!toolElement) return;
+    updateToolExecution(toolCallId, result, args = null) {
+        console.log('更新工具执行:', toolCallId, result);
+        
+        // 查找对应的工具执行元素
+        const toolElement = document.querySelector(`[data-tool-call-id="${toolCallId}"]`) || 
+                           document.querySelector(`[data-tool-name="${toolCallId}"]`) ||
+                           document.getElementById(`tool-${toolCallId}`);
+        
+        if (!toolElement) {
+            console.warn('未找到工具执行元素:', toolCallId);
+            console.log('当前所有工具元素:', document.querySelectorAll('.tool-execution'));
+            return;
+        }
         
         const resultElement = toolElement.querySelector('.tool-execution-result');
         
         if (args) {
-            resultElement.innerHTML = `
-                <strong>参数:</strong> ${JSON.stringify(args, null, 2)}
-                <br><strong>状态:</strong> ${result}
-            `;
+            // 如果提供了参数，说明是执行状态更新
+            resultElement.innerHTML = `<strong>状态:</strong> ${result}`;
         } else {
-            resultElement.innerHTML = `<strong>结果:</strong><br>${result}`;
+            // 否则是最终结果
+            resultElement.innerHTML = `<strong>结果:</strong><br><pre>${result}</pre>`;
         }
         
+        console.log('工具执行已更新:', toolCallId);
         this.scrollToBottom();
     }
     
@@ -689,6 +753,23 @@ class MCPApp {
         });
     }
     
+    // 显示系统提示词设置弹窗
+    showSystemPromptModal() {
+        const modal = document.getElementById('systemPromptModal');
+        const textarea = document.getElementById('systemPromptInput');
+        textarea.value = this.systemPrompt;
+        modal.classList.add('show');
+        textarea.focus();
+    }
+    
+    // 保存系统提示词
+    saveSystemPrompt() {
+        const textarea = document.getElementById('systemPromptInput');
+        this.systemPrompt = textarea.value.trim();
+        this.closeModal(document.getElementById('systemPromptModal'));
+        this.showSuccess('系统提示词已保存');
+    }
+    
     showSuccess(message) {
         this.showNotification(message, 'success');
     }
@@ -731,6 +812,12 @@ class MCPApp {
         }, 3000);
     }
     
+    closeModal(modal) {
+        if (modal) {
+            modal.classList.remove('show');
+        }
+    }
+    
     closeToolModal() {
         const modal = document.getElementById('toolModal');
         modal.classList.remove('show');
@@ -754,6 +841,14 @@ function insertMessage(text) {
 
 function closeToolModal() {
     app.closeToolModal();
+}
+
+function closeSystemPromptModal() {
+    app.closeModal(document.getElementById('systemPromptModal'));
+}
+
+function saveSystemPrompt() {
+    app.saveSystemPrompt();
 }
 
 // 初始化应用

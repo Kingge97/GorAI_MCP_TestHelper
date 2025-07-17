@@ -350,6 +350,36 @@
             opacity: 0.8;
         }
 
+        /* 系统提示词按钮样式 */
+        .btn-system-prompt {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: rgba(88, 86, 214, 0.1);
+            border: 1px solid rgba(88, 86, 214, 0.2);
+            border-radius: var(--radius-small);
+            color: var(--secondary-color);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .btn-system-prompt:hover {
+            background: rgba(88, 86, 214, 0.15);
+            border-color: rgba(88, 86, 214, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(88, 86, 214, 0.2);
+        }
+
+        .btn-system-prompt:active {
+            transform: translateY(0);
+            background: rgba(88, 86, 214, 0.2);
+        }
+
         .status-indicator {
             display: flex;
             align-items: center;
@@ -677,6 +707,10 @@
             box-shadow: var(--shadow-heavy);
         }
 
+        .modal-content.large {
+            max-width: 700px;
+        }
+
         .modal-header {
             display: flex;
             justify-content: space-between;
@@ -707,6 +741,58 @@
         .modal-body {
             padding: 24px;
             overflow-y: auto;
+        }
+
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .btn-secondary {
+            padding: 8px 16px;
+            background: var(--background-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-small);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: var(--background-tertiary);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-light);
+        }
+
+        #systemPromptInput {
+            width: 100%;
+            min-height: 200px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-medium);
+            background: var(--background-secondary);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: 'SF Mono', Monaco, monospace;
+            resize: vertical;
+        }
+
+        #systemPromptInput:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        }
+
+        .prompt-hint {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.4;
         }
 
         /* 加载指示器 */
@@ -784,7 +870,8 @@
                 gap: 12px;
             }
 
-            .btn-clear-chat {
+            .btn-clear-chat,
+            .btn-system-prompt {
                 padding: 6px 8px;
                 font-size: 12px;
             }
@@ -905,6 +992,12 @@
                 </div>
                 
                 <div class="top-bar-right">
+                    <button class="btn-system-prompt" id="systemPromptButton" title="设置系统提示词">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                        </svg>
+                    </button>
+                    
                     <button class="btn-clear-chat" id="clearChatButton" title="清空对话">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M3 6h18"></path>
@@ -974,6 +1067,30 @@
             </div>
             <div class="modal-body">
                 <div class="tool-execution-info" id="toolExecutionInfo"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 系统提示词设置弹窗 -->
+    <div class="modal" id="systemPromptModal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3>设置系统提示词</h3>
+                <button class="modal-close" onclick="closeSystemPromptModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea 
+                    id="systemPromptInput" 
+                    placeholder="输入自定义系统提示词..."
+                ></textarea>
+                <div class="prompt-hint">
+                    💡 系统提示词会在每次对话开始时发送给AI，用于设定AI的角色和行为。例如：
+                    <br>"你是一个专业的编程助手，擅长Python和JavaScript..."
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeSystemPromptModal()">取消</button>
+                <button class="btn-primary" onclick="saveSystemPrompt()">保存</button>
             </div>
         </div>
     </div>

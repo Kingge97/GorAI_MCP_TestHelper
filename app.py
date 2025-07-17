@@ -26,10 +26,10 @@ class WebServer:
         CORS(self.app)
         
         # 初始化OpenAI客户端
-        self.openai_client = OpenAI(
-            api_key=self.config['llm']['api_key'],
-            base_url=self.config['llm']['base_url']
-        )
+        # self.openai_client = OpenAI(
+        #     api_key=self.config['llm']['api_key'],
+        #     base_url=self.config['llm']['base_url']
+        # )
         
         # MCP客户端
         self.mcp_client = None
@@ -201,6 +201,7 @@ class WebServer:
             logger.info(f"用户选择了 {len(self.selected_tools)} 个工具")
             return jsonify({'success': True, 'selected_count': len(self.selected_tools)})
         
+        # 在 chat 路由中添加系统提示词支持，修改部分：
         @self.app.route('/api/chat', methods=['POST'])
         def chat():
             """处理聊天请求"""
@@ -208,6 +209,7 @@ class WebServer:
             message = data.get('message', '')
             model = data.get('model', self.config['llm']['default_model'])
             session_id = data.get('session_id')  # 从请求中获取会话ID
+            custom_system_prompt = data.get('system_prompt', '')  # 获取自定义系统提示词
             
             if not message.strip():
                 return jsonify({'error': '消息不能为空'}), 400
@@ -216,7 +218,11 @@ class WebServer:
             session_id, session = self.get_or_create_session(session_id)
             
             # 构建包含历史的消息列表
-            messages = [{"role": "system", "content": self.build_system_prompt()}]
+            system_prompt = self.build_system_prompt()
+            if custom_system_prompt:
+                system_prompt = custom_system_prompt + "\n\n" + system_prompt
+            
+            messages = [{"role": "system", "content": system_prompt}]
             
             # 添加历史消息
             messages.extend(session['messages'])
@@ -328,7 +334,12 @@ class WebServer:
             kwargs['tools'] = tools
             kwargs['tool_choice'] = 'auto'
         
-        response = self.openai_client.chat.completions.create(**kwargs)
+        openai_client = OpenAI(
+            api_key=self.config['llm']['api_key'],
+            base_url=self.config['llm']['base_url']
+        )
+
+        response = openai_client.chat.completions.create(**kwargs)
         
         # 处理工具调用
         if response.choices[0].message.tool_calls:
@@ -336,6 +347,7 @@ class WebServer:
         
         return response.choices[0].message.content
     
+    # 修复工具调用显示和消息解码问题
     def stream_chat_response(self, messages, model, tools=None, session_id=None):
         """流式聊天响应"""
         kwargs = {
@@ -347,93 +359,218 @@ class WebServer:
         if tools:
             kwargs['tools'] = tools
             kwargs['tool_choice'] = 'auto'
+            kwargs['parallel_tool_calls'] = True
         
         try:
-            stream = self.openai_client.chat.completions.create(**kwargs)
+            openai_client = OpenAI(
+                api_key=self.config['llm']['api_key'],
+                base_url=self.config['llm']['base_url']
+            )
+
+            stream = openai_client.chat.completions.create(**kwargs)
             
-            tool_calls = []
-            current_tool_call = None
+            # 明确指定utf-8编码
+            def encode_json(data):
+                return json.dumps(data, ensure_ascii=False).encode('utf-8')
             
             # 在流式响应结束前，保存助手的完整回复
             assistant_response = ""
-        
+            
+            reasoning_content = ""  # 定义完整思考过程
+            answer_content = ""  # 定义完整回复
+            tool_info = []  # 存储工具调用信息
+            is_answering = False  # 判断是否结束思考过程并开始回复
+            localMessages = messages  # 局部交流池
+
+            print("=" * 20 + "思考过程" + "=" * 20)
+            yield f"data: {json.dumps({'type': 'content', 'content': '=' * 20 + '思考过程' + '=' * 20 + '\n'}, ensure_ascii=False)}\n\n"
+            
             for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    content = chunk.choices[0].delta.content
-                    assistant_response += content
-                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
-            
-                # 处理工具调用
-                if chunk.choices[0].delta.tool_calls:
-                    for tool_call in chunk.choices[0].delta.tool_calls:
-                        if tool_call.index is not None:
-                            # 新的工具调用
-                            if tool_call.index >= len(tool_calls):
-                                tool_calls.append({
-                                    'id': tool_call.id or '',
-                                    'function': {'name': '', 'arguments': ''}
-                                })
-                            current_tool_call = tool_calls[tool_call.index]
+                if not chunk.choices:
+                    # 处理用量统计信息
+                    print("\n" + "=" * 20 + "Usage" + "=" * 20)
+                    print(chunk.usage)
+                else:
+                    delta = chunk.choices[0].delta
+                    # 处理AI的思考过程（链式推理）
+                    if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
+                        reasoning_content += delta.reasoning_content
+                        print(delta.reasoning_content, end="", flush=True)  # 实时输出思考过程
+                        yield f"data: {json.dumps({'type': 'content', 'content': delta.reasoning_content}, ensure_ascii=False)}\n\n"
+
+                    # 处理最终回复内容
+                    else:
+                        if not is_answering:  # 首次进入回复阶段时打印标题
+                            is_answering = True
+                            print("\n" + "=" * 20 + "回复内容" + "=" * 20)
+                            yield f"data: {json.dumps({'type': 'content', 'content': '\n' + '=' * 20 + '回复内容' + '=' * 20 + '\n'}, ensure_ascii=False)}\n\n"
                         
-                        if tool_call.function:
-                            if tool_call.function.name:
-                                current_tool_call['function']['name'] += tool_call.function.name
-                            if tool_call.function.arguments:
-                                current_tool_call['function']['arguments'] += tool_call.function.arguments
+                        if delta.content is not None:
+                            answer_content += delta.content
+                            print(delta.content, end="", flush=True)  # 流式输出回复内容
+                            yield f"data: {json.dumps({'type': 'content', 'content': delta.content}, ensure_ascii=False)}\n\n"
+
+                        # 处理工具调用信息（支持并行工具调用）
+                        if delta.tool_calls is not None:
+                            print(delta.tool_calls)
+                            for tool_call in delta.tool_calls:
+                                index = tool_call.index  # 工具调用索引，用于并行调用
+
+                                # 动态扩展工具信息存储列表
+                                while len(tool_info) <= index:
+                                    tool_info.append({})
+
+                                # 收集工具调用ID（用于后续函数调用）
+                                if tool_call.id:
+                                    tool_info[index]['id'] = tool_info[index].get('id', '') + tool_call.id
+
+                                # 收集函数名称（用于后续路由到具体函数）
+                                if tool_call.function and tool_call.function.name:
+                                    tool_info[index]['name'] = tool_info[index].get('name', '') + tool_call.function.name
+
+                                # 收集函数参数（JSON字符串格式，需要后续解析）
+                                if tool_call.function and tool_call.function.arguments:
+                                    tool_info[index]['arguments'] = tool_info[index].get('arguments', '') + tool_call.function.arguments
             
-            # 如果有工具调用，执行它们
-            if tool_calls:
-                yield f"data: {json.dumps({'type': 'tool_calls', 'tool_calls': tool_calls})}\n\n"
+            print(tool_info)
+            # 工具调用循环
+            while len(tool_info) > 0:
+                print("\n开始工具调用")
                 
-                for tool_call in tool_calls:
+                # 构建助手消息
+                if answer_content == "":
+                    assistantMessage = {"role": "assistant", "content": reasoning_content}
+                else:
+                    assistantMessage = {"role": "assistant", "content": answer_content}
+                assistantMessage["tool_calls"] = []
+                localMessages.append(assistantMessage)
+                
+                # 发送工具调用开始通知 - 修复工具调用显示
+                tool_calls_for_frontend = []
+                for i in range(len(tool_info)):
+                    tool = tool_info[i]
+                    tool_calls_for_frontend.append({
+                        "id": tool["id"],
+                        "function": {
+                            "name": tool["name"],
+                            "arguments": tool["arguments"]
+                        }
+                    })
+                
+                # 发送工具调用通知
+                yield f"data: {json.dumps({'type': 'tool_calls', 'tool_calls': tool_calls_for_frontend}, ensure_ascii=False)}\n\n"
+                
+                # 执行工具调用
+                print("工具数量："+str(len(tool_info)))
+                for i in range(len(tool_info)):
+                    tool = tool_info[i]
                     try:
-                        tool_name = tool_call['function']['name']
-                        tool_args = json.loads(tool_call['function']['arguments'])
+                        tool_args = json.loads(tool["arguments"])
+                        tool_name = tool["name"]
+                        tool_call_id = tool["id"]
                         
-                        yield f"data: {json.dumps({'type': 'tool_execution', 'tool_name': tool_name, 'args': tool_args})}\n\n"
+                        print(f"执行工具: {tool_name}, 参数: {tool_args}")
                         
+                        # 发送工具执行通知
+                        yield f"data: {json.dumps({'type': 'tool_execution', 'tool_name': tool_name, 'tool_call_id': tool_call_id, 'args': tool_args}, ensure_ascii=False)}\n\n"
+                        
+                        # 执行工具
                         result = self.mcp_client.execute_tool(tool_name, tool_args)
                         
-                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'result': str(result)})}\n\n"
+                        print(f"工具执行结果: {result}")
                         
-                        # 将工具结果添加到消息中，继续对话
-                        messages.append({
-                            "role": "assistant",
-                            "tool_calls": [tool_call]
+                        # 发送工具结果
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'tool_call_id': tool_call_id, 'result': str(result)}, ensure_ascii=False)}\n\n"
+                        
+                        # 更新消息历史
+                        assistantMessage["tool_calls"].append({
+                            "id": tool_call_id,
+                            "function": {"arguments": tool["arguments"], "name": tool["name"]},
+                            "type": 'function'
                         })
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call['id'],
-                            "content": str(result)
-                        })
+                        localMessages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
                         
                     except Exception as e:
-                        yield f"data: {json.dumps({'type': 'error', 'message': f'工具执行错误: {str(e)}'})}\n\n"
+                        error_msg = f"工具执行错误: {str(e)}"
+                        print(f"工具执行错误: {e}")
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool_name': tool_name, 'tool_call_id': tool_call_id, 'result': error_msg}, ensure_ascii=False)}\n\n"
+                        localMessages.append({"role": "tool", "tool_call_id": tool_call_id, "content": error_msg})
+                
+                # 继续进行对话
+                reasoning_content = ""
+                answer_content = ""
+                tool_info = []
+                is_answering = False
+
+                localKwargs = {
+                    'model': model,
+                    'messages': localMessages,
+                    'stream': True
+                }
+                
+                if tools:
+                    localKwargs['tools'] = tools
+                    localKwargs['tool_choice'] = 'auto'
                 
 
-                # 获取最终响应
-                final_stream = self.openai_client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    stream=True
+                openai_client = OpenAI(
+                    api_key=self.config['llm']['api_key'],
+                    base_url=self.config['llm']['base_url']
                 )
+                stream = openai_client.chat.completions.create(**localKwargs)
                 
-                for chunk in final_stream:
-                    if chunk.choices[0].delta.content:
-                        yield f"data: {json.dumps({'type': 'content', 'content': chunk.choices[0].delta.content})}\n\n"
+                print("\n" + "=" * 20 + "思考过程" + "=" * 20)
+                yield f"data: {json.dumps({'type': 'content', 'content': '\n' + '=' * 20 + '思考过程' + '=' * 20 + '\n'}, ensure_ascii=False)}\n\n"
+                
+                for chunk in stream:
+                    if not chunk.choices:
+                        print("\n" + "=" * 20 + "Usage" + "=" * 20)
+                        print(chunk.usage)
+                    else:
+                        delta = chunk.choices[0].delta
+                        
+                        if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
+                            reasoning_content += delta.reasoning_content
+                            print(delta.reasoning_content, end="", flush=True)
+                            yield f"data: {json.dumps({'type': 'content', 'content': delta.reasoning_content}, ensure_ascii=False)}\n\n"
+                        else:
+                            if not is_answering:
+                                is_answering = True
+                                print("\n" + "=" * 20 + "回复内容" + "=" * 20)
+                                yield f"data: {json.dumps({'type': 'content', 'content': '\n' + '=' * 20 + '回复内容' + '=' * 20 + '\n'}, ensure_ascii=False)}\n\n"
+                            
+                            if delta.content is not None:
+                                answer_content += delta.content
+                                print(delta.content, end="", flush=True)
+                                yield f"data: {json.dumps({'type': 'content', 'content': delta.content}, ensure_ascii=False)}\n\n"
+
+                            if delta.tool_calls is not None:
+                                for tool_call in delta.tool_calls:
+                                    index = tool_call.index
+                                    while len(tool_info) <= index:
+                                        tool_info.append({})
+                                    if tool_call.id:
+                                        tool_info[index]['id'] = tool_info[index].get('id', '') + tool_call.id
+                                    if tool_call.function and tool_call.function.name:
+                                        tool_info[index]['name'] = tool_info[index].get('name', '') + tool_call.function.name
+                                    if tool_call.function and tool_call.function.arguments:
+                                        tool_info[index]['arguments'] = tool_info[index].get('arguments', '') + tool_call.function.arguments
             
             # 保存助手回复到会话历史
             if session_id and session_id in self.chat_sessions:
+                final_content = answer_content if answer_content else reasoning_content
                 self.chat_sessions[session_id]['messages'].append({
                     "role": "assistant", 
-                    "content": assistant_response
+                    "content": final_content
                 })
             
-            yield f"data: {json.dumps({'type': 'end'})}\n\n"
+            yield f"data: {json.dumps({'type': 'end'}, ensure_ascii=False)}\n\n"
             
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-    
+            error_msg = f"流式响应错误: {str(e)}"
+            print(f"流式响应错误: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg}, ensure_ascii=False)}\n\n"
+
     def handle_tool_calls(self, response, messages, model, tools):
         """处理工具调用（非流式）"""
         tool_calls = response.choices[0].message.tool_calls
@@ -466,7 +603,11 @@ class WebServer:
                 })
         
         # 获取最终响应
-        final_response = self.openai_client.chat.completions.create(
+        openai_client = OpenAI(
+            api_key=self.config['llm']['api_key'],
+            base_url=self.config['llm']['base_url']
+        )
+        final_response = openai_client.chat.completions.create(
             model=model,
             messages=messages,
         )

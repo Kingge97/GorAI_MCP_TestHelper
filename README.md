@@ -36,32 +36,32 @@ python start_all.py
 
 ## 工具编写
 
-在tools文件夹下新建.py文件
+在tools文件夹下新建.py文件,在文件内先添加函数：
+
+	def mcp_tool(description: str = "", parameters: dict = None):
+		"""MCP工具装饰器"""
+		def decorator(func):
+			func._mcp_tool = {
+				'description': description,
+				'parameters': parameters or {}
+			}
+			return func
+		return decorator
 
 随后函数参照如下格式：
 
 	@mcp_tool(
-	
 	    description="{工具描述}",
-	    
 	    parameters={
-	    
 		"{工具输入变量}": {"type": "{变量类型}", "description": "变量描述"},
-		
 	  	{其他变量格式参照同上}
-	    
 	    }
-	
 	)
 
 	def {方法名}({输入参数}):
-	
 		……
-	
 		具体代码
-	
 		……
-	
 		return 返回值
 
 编写完毕后，重启服务，左侧即可加载MCP工具
@@ -78,14 +78,10 @@ llm可配置模型相关的内容，其中id为连接参数的modelName，name�
 
 ## 版本计划
 
-当前版本 v0.0.1.4
+当前版本 v0.0.1.5
 
 后续计划更新：
 
-1.针对思考内容的语句输出
+1.英文版本的界面及README
 
-2.系统提示词的输入
-
-3.英文版本的界面及README
-
-4.多个AI串并联工作链路
+2.多个AI串并联工作链路
