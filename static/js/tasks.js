@@ -361,7 +361,19 @@ async function selectHistoryFile() {
 function renderExecutionHistory(executions) {
     const executionList = document.getElementById('executionList');
     
-    if (executions.length === 0) {
+    // 根据任务ID和开始时间去重
+    const uniqueExecutions = [];
+    const seenKeys = new Set();
+    
+    executions.forEach(exec => {
+        const key = `${exec.task_id}_${exec.start_time}`;
+        if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            uniqueExecutions.push(exec);
+        }
+    });
+    
+    if (uniqueExecutions.length === 0) {
         executionList.innerHTML = `
             <div class="empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -380,7 +392,7 @@ function renderExecutionHistory(executions) {
         return;
     }
     
-    executionList.innerHTML = executions.map(exec => `
+    executionList.innerHTML = uniqueExecutions.map(exec => `
         <div class="execution-item">
             <div class="execution-info">
                 <div class="execution-title">${exec.task_name}</div>
@@ -876,6 +888,7 @@ async function handleCreateTask(event) {
             alert(isEdit ? '任务更新成功！' : '任务创建成功！');
             clearForm();
             loadTasks();
+            loadExecutionHistory(); // 刷新执行历史，避免显示重复记录
             // 切换到任务列表标签
             document.querySelector('[data-tab="tasks"]').click();
         } else {

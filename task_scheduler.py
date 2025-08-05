@@ -337,11 +337,23 @@ class TaskScheduler:
                         if 'task_id' in data and 'task_name' in data:
                             # 创建执行记录
                             execution_id = data.get('execution_id', filename.replace('.json', ''))
+                            # 确保start_time格式一致
+                            start_time = data.get('start_time', '')
+                            if not start_time:
+                                # 尝试从文件名提取时间
+                                try:
+                                    parts = filename.split('_')
+                                    if len(parts) >= 3:
+                                        date_part = parts[-3] + '_' + parts[-2]
+                                        start_time = datetime.strptime(date_part, '%Y%m%d_%H%M%S').isoformat()
+                                except:
+                                    start_time = datetime.fromtimestamp(os.path.getctime(file_path)).isoformat()
+                            
                             record = TaskExecutionRecord(
                                 id=execution_id,
                                 task_id=data['task_id'],
                                 task_name=data['task_name'],
-                                start_time=data.get('start_time', ''),
+                                start_time=start_time,
                                 end_time=data.get('end_time'),
                                 status=data.get('status', TaskStatus.COMPLETED.value),
                                 chat_file=filename
@@ -355,9 +367,15 @@ class TaskScheduler:
         
         # 合并内存中的记录和文件中的记录，去重
         all_records = {r.id: r for r in records}  # 内存记录优先
+        
+        # 使用任务ID+开始时间作为唯一标识，避免重复
+        existing_keys = {(r.task_id, r.start_time) for r in all_records.values()}
+        
         for record in file_records:
-            if record.id not in all_records:
+            key = (record.task_id, record.start_time)
+            if record.id not in all_records and key not in existing_keys:
                 all_records[record.id] = record
+                existing_keys.add(key)
         
         # 按开始时间排序，最新的在前
         result_records = list(all_records.values())
