@@ -269,12 +269,20 @@ class MCPApp {
     }
     
     updateSendButtonState() {
-        const button = document.getElementById('sendButton');
+        const sendButton = document.getElementById('sendButton');
+        const stopButton = document.getElementById('stopButton');
         const input = document.getElementById('messageInput');
         const hasMessage = input.value.trim().length > 0;
         const hasModel = this.currentModel !== null;
         
-        button.disabled = !hasMessage || !hasModel || this.isStreaming;
+        if (this.isStreaming) {
+            sendButton.style.display = 'none';
+            stopButton.style.display = 'flex';
+        } else {
+            sendButton.style.display = 'flex';
+            stopButton.style.display = 'none';
+            sendButton.disabled = !hasMessage || !hasModel;
+        }
     }
     
     setupEventListeners() {
@@ -303,15 +311,47 @@ class MCPApp {
         });
         
         messageInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 this.sendMessage();
+            }
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                const input = e.target;
+                const start = input.selectionStart;
+                const end = input.selectionEnd;
+                const value = input.value;
+                
+                // 插入换行符
+                input.value = value.substring(0, start) + '\n' + value.substring(end);
+                
+                // 移动光标到新行的开始位置
+                input.selectionStart = input.selectionEnd = start + 1;
+                
+                // 重新调整文本框大小
+                this.autoResizeTextarea(input);
+                this.updateCharCount(input.value);
             }
         });
         
         // 发送按钮
         document.getElementById('sendButton').addEventListener('click', () => {
             this.sendMessage();
+        });
+        
+        // 停止按钮
+        document.getElementById('stopButton').addEventListener('click', () => {
+            this.interruptChat();
+        });
+        
+        // 保存对话按钮
+        document.getElementById('saveChatButton').addEventListener('click', () => {
+            this.saveChatHistory();
+        });
+        
+        // 加载对话按钮
+        document.getElementById('loadChatButton').addEventListener('click', () => {
+            this.loadChatHistory();
         });
         
         // 清空对话按钮
@@ -498,8 +538,21 @@ class MCPApp {
                                 currentContent += `\n\n❌ 错误: ${parsed.message}`;
                                 this.updateMessageContent(assistantMessageElement, currentContent);
                             } 
+                            else if (parsed.type === 'interrupted') {
+                                console.log('对话被中断');
+                                if (!typingIndicatorRemoved) {
+                                    this.removeTypingIndicator(typingId);
+                                    typingIndicatorRemoved = true;
+                                }
+                                this.addMessage('assistant', '⚠️ 对话已被用户中断');
+                                this.isStreaming = false;
+                                this.updateSendButtonState();
+                                break;
+                            }
                             else if (parsed.type === 'end') {
                                 console.log('流结束');
+                                this.isStreaming = false;
+                                this.updateSendButtonState();
                                 break;
                             }
                         } catch (e) {
@@ -522,6 +575,8 @@ class MCPApp {
             if (!typingIndicatorRemoved) {
                 this.removeTypingIndicator(typingId);
             }
+            this.isStreaming = false;
+            this.updateSendButtonState();
         }
     }
     
@@ -675,8 +730,91 @@ class MCPApp {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
     
+    // 移除最后两条消息（用户消息和助手消息）
+    removeLastMessages() {
+        const messagesContainer = document.getElementById('chatMessages');
+        const messages = messagesContainer.querySelectorAll('.message');
+        
+        if (messages.length >= 2) {
+            // 移除最后两条消息（用户消息和助手消息）
+            messages[messages.length - 1].remove(); // 助手消息
+            messages[messages.length - 2].remove(); // 用户消息
+        } else if (messages.length === 1) {
+            // 如果只有一条消息，移除它
+            messages[0].remove();
+        }
+        
+        // 如果没有消息了，显示欢迎消息
+        if (messagesContainer.children.length === 0) {
+            this.showWelcomeMessage();
+        }
+    }
+    
+    // 显示欢迎消息
+    showWelcomeMessage() {
+        const messagesContainer = document.getElementById('chatMessages');
+        
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'welcome-message fade-in';
+        welcomeDiv.innerHTML = `
+            <h3>👋 欢迎使用MCP工具助手</h3>
+            <p>请先在左侧选择要使用的工具，然后选择AI模型开始对话。</p>
+            <div class="quick-actions">
+                <button class="quick-action" onclick="insertMessage('帮我计算 25 * 36 + 78')">
+                    计算数学表达式
+                </button>
+                <button class="quick-action" onclick="insertMessage('分析这段文本的统计信息')">
+                    文本分析
+                </button>
+                <button class="quick-action" onclick="insertMessage('显示当前系统信息')">
+                    系统信息
+                </button>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(welcomeDiv);
+    }
+    
     // 修改清空对话方法
+    async interruptChat() {
+        if (!this.isStreaming || !this.sessionId) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/chat/interrupt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.showSuccess('对话已中断');
+                
+                // 从界面上移除最后两条消息（用户消息和助手消息）
+                this.removeLastMessages();
+                
+            } else {
+                console.error('中断对话失败:', response.status);
+            }
+        } catch (error) {
+            console.error('中断对话失败:', error);
+            this.showError('中断对话失败');
+        }
+    }
+
     async clearChat() {
+        // 如果正在流式输出，先中断
+        if (this.isStreaming) {
+            await this.interruptChat();
+        }
+        
         // 调用后端API清空服务器端的对话历史
         if (this.sessionId) {
             try {
@@ -703,25 +841,7 @@ class MCPApp {
         messagesContainer.innerHTML = '';
         
         // 显示欢迎消息
-        const welcomeDiv = document.createElement('div');
-        welcomeDiv.className = 'welcome-message fade-in';
-        welcomeDiv.innerHTML = `
-            <h3>👋 欢迎使用MCP工具助手</h3>
-            <p>请先在左侧选择要使用的工具，然后选择AI模型开始对话。</p>
-            <div class="quick-actions">
-                <button class="quick-action" onclick="insertMessage('帮我计算 25 * 36 + 78')">
-                    计算数学表达式
-                </button>
-                <button class="quick-action" onclick="insertMessage('分析这段文本的统计信息')">
-                    文本分析
-                </button>
-                <button class="quick-action" onclick="insertMessage('显示当前系统信息')">
-                    系统信息
-                </button>
-            </div>
-        `;
-        
-        messagesContainer.appendChild(welcomeDiv);
+        this.showWelcomeMessage();
         
         // 显示成功提示
         this.showSuccess('对话已清空');
@@ -768,6 +888,241 @@ class MCPApp {
         this.systemPrompt = textarea.value.trim();
         this.closeModal(document.getElementById('systemPromptModal'));
         this.showSuccess('系统提示词已保存');
+    }
+    
+    // 保存对话历史
+    async saveChatHistory() {
+        if (!this.sessionId) {
+            this.showError('没有可保存的对话');
+            return;
+        }
+        
+        const filename = prompt('请输入保存文件名（不含扩展名）:', `chat_${new Date().toISOString().slice(0, 19).replace(/[:]/g, '-')}`);
+        if (!filename) return;
+        
+        try {
+            const response = await fetch('/api/chat/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    session_id: this.sessionId,
+                    filename: filename,
+                    system_prompt: this.systemPrompt
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.showSuccess(`对话已保存: ${data.filename}`);
+            } else {
+                this.showError(data.error || '保存失败');
+            }
+        } catch (error) {
+            console.error('保存对话失败:', error);
+            this.showError('保存对话失败');
+        }
+    }
+    
+    // 加载对话历史
+    async loadChatHistory() {
+        try {
+            const savedChats = await this.getSavedChats();
+            if (savedChats.length === 0) {
+                this.showError('没有已保存的对话');
+                return;
+            }
+            
+            this.showLoadChatModal(savedChats);
+        } catch (error) {
+            console.error('获取对话列表失败:', error);
+            this.showError('获取对话列表失败');
+        }
+    }
+    
+    // 获取已保存的对话列表
+    async getSavedChats() {
+        const response = await fetch('/api/chat/list');
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        return data.files || [];
+    }
+    
+    // 显示加载对话弹窗
+    showLoadChatModal(files) {
+        const modal = document.getElementById('loadChatModal');
+        const listContainer = document.getElementById('savedChatsList');
+        
+        listContainer.innerHTML = '';
+        
+        if (files.length === 0) {
+            listContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">没有已保存的对话</div>';
+        } else {
+            files.forEach(file => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'saved-chat-item';
+                fileItem.style.cssText = `
+                    padding: 15px;
+                    border: 1px solid var(--border-color);
+                    border-radius: 8px;
+                    margin-bottom: 10px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                `;
+                
+                fileItem.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>${file.filename}</strong>
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
+                                ${file.message_count || 0} 条消息 • 
+                                ${new Date(file.modified).toLocaleString('zh-CN')}
+                                ${file.has_system_prompt ? ' • 📋 含提示词' : ''}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn-load-chat" data-filename="${file.filename}" 
+                                    style="padding: 6px 12px; background: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                加载
+                            </button>
+                            <button class="btn-delete-chat" data-filename="${file.filename}" 
+                                    style="padding: 6px 12px; background: var(--error-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                删除
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                fileItem.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('btn-load-chat')) {
+                        this.loadSpecificChat(e.target.dataset.filename);
+                    } else if (e.target.classList.contains('btn-delete-chat')) {
+                        this.deleteSavedChat(e.target.dataset.filename);
+                    }
+                });
+                
+                listContainer.appendChild(fileItem);
+            });
+        }
+        
+        modal.classList.add('show');
+    }
+    
+    // 加载特定对话
+    async loadSpecificChat(filename) {
+        try {
+            const response = await fetch('/api/chat/load', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: filename
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // 更新会话ID
+                this.sessionId = data.session_id;
+                
+                // 清空当前对话
+                const messagesContainer = document.getElementById('chatMessages');
+                messagesContainer.innerHTML = '';
+                
+                // 加载历史消息
+                data.messages.forEach(msg => {
+                    this.addMessage(msg.role, msg.content);
+                });
+                
+                // 加载模型和工具选择
+                if (data.model) {
+                    document.getElementById('modelSelect').value = data.model;
+                    this.currentModel = data.model;
+                }
+                
+                // 加载系统提示词
+                if (data.system_prompt) {
+                    this.systemPrompt = data.system_prompt;
+                    // 更新系统提示词输入框
+                    const systemPromptInput = document.getElementById('systemPromptInput');
+                    if (systemPromptInput) {
+                        systemPromptInput.value = data.system_prompt;
+                    }
+                } else {
+                    this.systemPrompt = '';
+                    const systemPromptInput = document.getElementById('systemPromptInput');
+                    if (systemPromptInput) {
+                        systemPromptInput.value = '';
+                    }
+                }
+                
+                if (data.selected_tools && data.selected_tools.length > 0) {
+                    this.selectedTools = data.selected_tools;
+                    // 通知后端更新工具选择
+                    await fetch('/api/tools/select', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            tools: this.selectedTools
+                        })
+                    });
+                    
+                    // 重新加载工具列表
+                    await this.loadTools();
+                }
+                
+                this.closeModal(document.getElementById('loadChatModal'));
+                this.showSuccess(`对话已加载: ${filename}`);
+            } else {
+                this.showError(data.error || '加载失败');
+            }
+        } catch (error) {
+            console.error('加载对话失败:', error);
+            this.showError('加载对话失败');
+        }
+    }
+    
+    // 删除已保存的对话
+    async deleteSavedChat(filename) {
+        if (!confirm(`确定要删除对话 "${filename}" 吗？此操作不可恢复。`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/chat/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: filename
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.showSuccess('对话已删除');
+                // 刷新列表
+                const savedChats = await this.getSavedChats();
+                this.showLoadChatModal(savedChats);
+            } else {
+                this.showError(data.error || '删除失败');
+            }
+        } catch (error) {
+            console.error('删除对话失败:', error);
+            this.showError('删除对话失败');
+        }
     }
     
     showSuccess(message) {
@@ -851,36 +1206,26 @@ function saveSystemPrompt() {
     app.saveSystemPrompt();
 }
 
+function closeLoadChatModal() {
+    app.closeModal(document.getElementById('loadChatModal'));
+}
+
 // 初始化应用
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new MCPApp();
 });
 
-// 键盘快捷键
+// 键盘快捷键 - 已移除聊天历史导航快捷键，仅保留基本输入快捷键
 document.addEventListener('keydown', (e) => {
-    // Ctrl/Cmd + K 聚焦到工具搜索
+    // 仅保留工具搜索聚焦快捷键
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         document.getElementById('toolSearch').focus();
     }
     
-    // Ctrl/Cmd + Enter 发送消息
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        app.sendMessage();
-    }
-    
-    // Escape 清空输入
-    if (e.key === 'Escape') {
-        const input = document.getElementById('messageInput');
-        if (input.value) {
-            input.value = '';
-            app.autoResizeTextarea(input);
-            app.updateCharCount('');
-            app.updateSendButtonState();
-        }
-    }
+    // 注意：Ctrl+Enter 换行功能已在消息输入框的事件监听器中处理
+    // 这里不再重复处理
 });
 
 // 错误处理

@@ -6,29 +6,26 @@
   "web_server": {
     "host": "localhost",
     "port": 5000,
-    "debug": true
+    "debug": false
   },
   "llm": {
-    "api_key": "your api key",
-    "base_url": "your base url",
     "models": [
       {
-        "id": "qwen-max",
-        "name": "千问MAX",
-        "description": ""
+        "id": "qwen3-235b-a22b-instruct-2507",
+        "name": "千问3-A235B-instruct",
+        "description": "2507",
+        "api_key": "",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
       },
       {
-        "id": "qwen3-235b-a22b",
-        "name": "千问3-A235B",
-        "description": ""
-      },
-      {
-        "id": "deepseek-r1-0528",
-        "name": "deepseekR1-0528",
-        "description": ""
+        "id": "qwen3-235b-a22b-thinking-2507",
+        "name": "千问3-A235B-thinking",
+        "description": "2507",
+        "api_key": "",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
       }
     ],
-    "default_model": "qwen-max",
+    "default_model": "qwen3-235b-a22b-instruct-2507",
     "stream": true
   },
   "ui": {

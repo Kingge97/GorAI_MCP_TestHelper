@@ -5,6 +5,8 @@ import threading
 import os
 import importlib.util
 import inspect
+import signal
+import sys
 from typing import Dict, List, Any, Callable
 import traceback
 
@@ -23,6 +25,7 @@ class MCPServer:
         self.tools_dir = tools_dir
         self.tools = {}
         self.running = False
+        self.server_socket = None
         
         # 从配置文件加载配置
         config = self.load_config()
@@ -32,6 +35,10 @@ class MCPServer:
         self.port = port or config.get('mcp_server', {}).get('port', 8888)
         
         print(f"MCP服务器配置 - 主机: {self.host}, 端口: {self.port}")
+        
+        # 设置信号处理器
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
         
     def load_config(self):
         """从配置文件加载配置"""
@@ -203,18 +210,30 @@ class MCPServer:
         print(f"客户端 {address} 已连接")
         
         try:
+            client_socket.settimeout(0.5)  # 设置较短的超时以便快速响应关闭
             while self.running:
-                data = client_socket.recv(4096).decode('utf-8')
-                if not data:
+                try:
+                    data = client_socket.recv(65535).decode('utf-8')
+                    if not data:
+                        break
+                    
+                    response = self.handle_request(data)
+                    client_socket.send(response.encode('utf-8'))
+                except socket.timeout:
+                    # 超时后继续循环，检查running状态
+                    continue
+                except socket.error as e:
+                    if self.running:
+                        print(f"客户端连接错误 {address}: {e}")
                     break
-                
-                response = self.handle_request(data)
-                client_socket.send(response.encode('utf-8'))
-                
+                    
         except Exception as e:
             print(f"处理客户端 {address} 时出错: {e}")
         finally:
-            client_socket.close()
+            try:
+                client_socket.close()
+            except:
+                pass
             print(f"客户端 {address} 已断开连接")
     
     def start(self):
@@ -226,32 +245,54 @@ class MCPServer:
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
+            self.server_socket.settimeout(1.0)  # 设置超时以便定期检查running状态
             
             self.running = True
             print(f"MCP服务器启动在 {self.host}:{self.port}")
+            print("按 Ctrl+C 或发送 SIGTERM 信号来停止服务器")
             
             while self.running:
-                client_socket, address = self.server_socket.accept()
-                client_thread = threading.Thread(
-                    target=self.handle_client,
-                    args=(client_socket, address)
-                )
-                client_thread.daemon = True
-                client_thread.start()
+                try:
+                    client_socket, address = self.server_socket.accept()
+                    client_socket.settimeout(None)  # 客户端连接不设超时
+                    client_thread = threading.Thread(
+                        target=self.handle_client,
+                        args=(client_socket, address)
+                    )
+                    client_thread.daemon = True
+                    client_thread.start()
+                except socket.timeout:
+                    # 超时后继续循环，检查running状态
+                    continue
+                except OSError as e:
+                    if self.running:
+                        print(f"接受客户端连接时出错: {e}")
+                    break
                 
         except KeyboardInterrupt:
-            print("\n服务器正在关闭...")
+            print("\n收到键盘中断，正在关闭服务器...")
         except Exception as e:
             print(f"服务器启动失败: {e}")
             print(f"请检查地址 {self.host}:{self.port} 是否已被占用")
         finally:
             self.stop()
     
+    def _signal_handler(self, signum, frame):
+        """处理终止信号"""
+        print(f"\n收到终止信号 ({signum})，正在优雅关闭服务器...")
+        self.stop()
+        sys.exit(0)
+    
     def stop(self):
         """停止服务器"""
         self.running = False
-        if hasattr(self, 'server_socket'):
-            self.server_socket.close()
+        if self.server_socket:
+            try:
+                self.server_socket.close()
+                print("服务器套接字已关闭")
+            except Exception as e:
+                print(f"关闭服务器套接字时出错: {e}")
+        print("服务器已停止")
 
 # mcp_client.py - MCP客户端实现
 class MCPClient:
@@ -314,7 +355,7 @@ class MCPClient:
         request_data = json.dumps(request)
         self.socket.send(request_data.encode('utf-8'))
         
-        response_data = self.socket.recv(4096).decode('utf-8')
+        response_data = self.socket.recv(65535).decode('utf-8')
         return json.loads(response_data)
     
     def list_tools(self) -> List[Dict]:
@@ -370,6 +411,11 @@ if __name__ == "__main__":
             server.start()
         except KeyboardInterrupt:
             print("\n服务器已停止")
+        except SystemExit:
+            print("\n服务器已优雅关闭")
+        except Exception as e:
+            print(f"服务器运行错误: {e}")
+            sys.exit(1)
     
     elif len(sys.argv) > 1 and sys.argv[1] == 'client':
         # 运行客户端测试

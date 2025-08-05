@@ -316,22 +316,39 @@
             box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
         }
 
-        /* 苹果风格的清空对话按钮 */
-        .btn-clear-chat {
+        /* 苹果风格的对话操作按钮 */
+        .btn-clear-chat,
+        .btn-save-chat,
+        .btn-load-chat {
             display: flex;
             align-items: center;
             gap: 6px;
             padding: 8px 12px;
-            background: rgba(255, 59, 48, 0.1);
-            border: 1px solid rgba(255, 59, 48, 0.2);
             border-radius: var(--radius-small);
-            color: var(--error-color);
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
+        }
+
+        .btn-clear-chat {
+            background: rgba(255, 59, 48, 0.1);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            color: var(--error-color);
+        }
+
+        .btn-save-chat {
+            background: rgba(52, 199, 89, 0.1);
+            border: 1px solid rgba(52, 199, 89, 0.2);
+            color: var(--success-color);
+        }
+
+        .btn-load-chat {
+            background: rgba(0, 122, 255, 0.1);
+            border: 1px solid rgba(0, 122, 255, 0.2);
+            color: var(--primary-color);
         }
 
         .btn-clear-chat:hover {
@@ -341,20 +358,31 @@
             box-shadow: 0 2px 8px rgba(255, 59, 48, 0.2);
         }
 
-        .btn-clear-chat:active {
-            transform: translateY(0);
-            background: rgba(255, 59, 48, 0.2);
+        .btn-save-chat:hover {
+            background: rgba(52, 199, 89, 0.15);
+            border-color: rgba(52, 199, 89, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(52, 199, 89, 0.2);
         }
 
-        .btn-clear-chat svg {
-            opacity: 0.8;
+        .btn-load-chat:hover {
+            background: rgba(0, 122, 255, 0.15);
+            border-color: rgba(0, 122, 255, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+        }
+
+        .btn-clear-chat:active,
+        .btn-save-chat:active,
+        .btn-load-chat:active {
+            transform: translateY(0);
         }
 
         /* 系统提示词按钮样式 */
         .btn-system-prompt {
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
             padding: 8px 12px;
             background: rgba(88, 86, 214, 0.1);
             border: 1px solid rgba(88, 86, 214, 0.2);
@@ -366,6 +394,9 @@
             transition: all 0.2s ease;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
+            white-space: nowrap;
+            height: 40px;
+            align-self: flex-end;
         }
 
         .btn-system-prompt:hover {
@@ -992,9 +1023,25 @@
                 </div>
                 
                 <div class="top-bar-right">
-                    <button class="btn-system-prompt" id="systemPromptButton" title="设置系统提示词">
+                    <button class="btn-system-prompt" onclick="window.open('/tasks', '_blank')" title="任务调度系统入口" style="background: rgba(0, 122, 255, 0.1); border-color: rgba(0, 122, 255, 0.2); color: var(--primary-color);">
+                        🕐 任务调度系统入口
+                    </button>
+                    
+                    <button class="btn-save-chat" id="saveChatButton" title="保存对话">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                            <polyline points="17,21 17,13 7,13 7,21"></polyline>
+                            <polyline points="7,3 7,8 15,8"></polyline>
+                        </svg>
+                    </button>
+                    
+                    <button class="btn-load-chat" id="loadChatButton" title="加载对话">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14,2 14,8 20,8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10,9 9,9 8,9"></polyline>
                         </svg>
                     </button>
                     
@@ -1035,16 +1082,24 @@
                 
                 <div class="chat-input-area">
                     <div class="input-container">
+                        <button class="btn-system-prompt" id="systemPromptButton" title="设置系统提示词" style="margin-right: 8px;">
+                            提示词
+                        </button>
                         <textarea 
                             id="messageInput" 
                             placeholder="输入消息..." 
                             rows="1"
                             maxlength="4000"
                         ></textarea>
-                        <button id="sendButton" class="send-button" disabled>
+                        <button id="sendButton" class="send-button">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="22" y1="2" x2="11" y2="13"></line>
                                 <polygon points="22,2 15,22 11,13 2,9"></polygon>
+                            </svg>
+                        </button>
+                        <button id="stopButton" class="send-button" style="display: none; background: var(--error-color);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="6" y="6" width="12" height="12"></rect>
                             </svg>
                         </button>
                     </div>
@@ -1052,6 +1107,8 @@
                         <span id="charCount">0/4000</span>
                         <span class="separator">•</span>
                         <span id="toolsInfo">未选择工具</span>
+                        <span class="separator">•</span>
+                        <span>Enter 发送 • Ctrl+Enter 换行</span>
                     </div>
                 </div>
             </div>
@@ -1091,6 +1148,24 @@
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="closeSystemPromptModal()">取消</button>
                 <button class="btn-primary" onclick="saveSystemPrompt()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载对话弹窗 -->
+    <div class="modal" id="loadChatModal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3>加载对话</h3>
+                <button class="modal-close" onclick="closeLoadChatModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="savedChatsList" style="max-height: 400px; overflow-y: auto;">
+                    <div class="loading">正在加载对话列表...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeLoadChatModal()">取消</button>
             </div>
         </div>
     </div>
