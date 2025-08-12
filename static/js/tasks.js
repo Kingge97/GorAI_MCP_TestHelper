@@ -888,7 +888,16 @@ async function handleCreateTask(event) {
             alert(isEdit ? '任务更新成功！' : '任务创建成功！');
             clearForm();
             loadTasks();
-            loadExecutionHistory(); // 刷新执行历史，避免显示重复记录
+            // 如果是编辑模式，刷新执行历史以避免重复显示
+            if (isEdit) {
+                // 先清空当前执行记录
+                currentExecutions = [];
+                renderExecutionHistory([]);
+                // 然后重新加载
+                setTimeout(() => {
+                    loadExecutionHistory();
+                }, 100);
+            }
             // 切换到任务列表标签
             document.querySelector('[data-tab="tasks"]').click();
         } else {

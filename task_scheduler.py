@@ -369,10 +369,34 @@ class TaskScheduler:
         all_records = {r.id: r for r in records}  # 内存记录优先
         
         # 使用任务ID+开始时间作为唯一标识，避免重复
-        existing_keys = {(r.task_id, r.start_time) for r in all_records.values()}
+        # 标准化时间格式以确保比较的一致性
+        existing_keys = set()
+        for r in all_records.values():
+            start_time = r.start_time
+            if start_time:
+                # 确保时间格式一致（去掉微秒和时区信息）
+                try:
+                    dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    normalized_time = dt.replace(microsecond=0).isoformat()
+                except:
+                    normalized_time = start_time
+            else:
+                normalized_time = ''
+            existing_keys.add((r.task_id, normalized_time))
         
         for record in file_records:
-            key = (record.task_id, record.start_time)
+            start_time = record.start_time
+            if start_time:
+                # 确保时间格式一致
+                try:
+                    dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    normalized_time = dt.replace(microsecond=0).isoformat()
+                except:
+                    normalized_time = start_time
+            else:
+                normalized_time = ''
+            
+            key = (record.task_id, normalized_time)
             if record.id not in all_records and key not in existing_keys:
                 all_records[record.id] = record
                 existing_keys.add(key)
