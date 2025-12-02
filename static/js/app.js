@@ -151,9 +151,140 @@ class MCPApp {
         
         container.innerHTML = '';
         
+        // 按文件分组
+        const toolsByFile = this.groupToolsByFile();
+        
+        Object.keys(toolsByFile).forEach(fileName => {
+            const fileGroup = this.createFileGroupElement(fileName, toolsByFile[fileName]);
+            container.appendChild(fileGroup);
+        });
+    }
+    
+    groupToolsByFile() {
+        const grouped = {};
+        
         this.availableTools.forEach(tool => {
-            const toolElement = this.createToolElement(tool);
-            container.appendChild(toolElement);
+            const fileName = tool.package || 'unknown';
+            if (!grouped[fileName]) {
+                grouped[fileName] = [];
+            }
+            grouped[fileName].push(tool);
+        });
+        
+        return grouped;
+    }
+    
+    createFileGroupElement(fileName, tools) {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'file-group';
+        groupDiv.dataset.fileName = fileName;
+        
+        const allSelected = tools.every(tool => this.selectedTools.includes(tool.name));
+        const someSelected = tools.some(tool => this.selectedTools.includes(tool.name));
+        
+        groupDiv.innerHTML = `
+            <div class="file-header" onclick="app.toggleFileGroup('${fileName}')">
+                <div class="file-checkbox ${allSelected ? 'checked' : ''}" 
+                     onclick="event.stopPropagation(); app.toggleFileTools('${fileName}')"></div>
+                <div class="file-info">
+                    <div class="file-name">
+                        <svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9,18 15,12 9,6"></polyline>
+                        </svg>
+                        ${fileName}.py
+                    </div>
+                    <div class="file-tool-count">${tools.length} 个工具</div>
+                </div>
+            </div>
+            <div class="file-tools" id="file-tools-${fileName}">
+                ${tools.map(tool => this.createToolElementForFile(tool)).join('')}
+            </div>
+        `;
+        
+        return groupDiv;
+    }
+    
+    createToolElementForFile(tool) {
+        const isSelected = this.selectedTools.includes(tool.name);
+        
+        return `
+            <div class="tool-item ${isSelected ? 'selected' : ''}" data-tool-name="${tool.name}" 
+                 onclick="event.stopPropagation(); app.toggleTool('${tool.name}')">
+                <div class="tool-header">
+                    <div class="tool-checkbox ${isSelected ? 'checked' : ''}"></div>
+                    <div class="tool-name">${tool.name}</div>
+                </div>
+                <div class="tool-description">${tool.description}</div>
+            </div>
+        `;
+    }
+    
+    toggleFileGroup(fileName) {
+        const fileTools = document.getElementById(`file-tools-${fileName}`);
+        const expandIcon = document.querySelector(`[data-file-name="${fileName}"] .expand-icon`);
+        
+        if (fileTools.classList.contains('expanded')) {
+            fileTools.classList.remove('expanded');
+            expandIcon.classList.remove('expanded');
+        } else {
+            fileTools.classList.add('expanded');
+            expandIcon.classList.add('expanded');
+        }
+    }
+    
+    toggleFileTools(fileName) {
+        const toolsByFile = this.groupToolsByFile();
+        const tools = toolsByFile[fileName] || [];
+        const allSelected = tools.every(tool => this.selectedTools.includes(tool.name));
+        
+        if (allSelected) {
+            // 取消选择所有工具
+            tools.forEach(tool => {
+                const index = this.selectedTools.indexOf(tool.name);
+                if (index > -1) {
+                    this.selectedTools.splice(index, 1);
+                }
+            });
+        } else {
+            // 选择所有工具
+            tools.forEach(tool => {
+                if (!this.selectedTools.includes(tool.name)) {
+                    this.selectedTools.push(tool.name);
+                }
+            });
+        }
+        
+        this.updateFileGroupUI(fileName);
+        this.updateToolsCounter();
+    }
+    
+    updateFileGroupUI(fileName) {
+        const toolsByFile = this.groupToolsByFile();
+        const tools = toolsByFile[fileName] || [];
+        const allSelected = tools.every(tool => this.selectedTools.includes(tool.name));
+        const someSelected = tools.some(tool => this.selectedTools.includes(tool.name));
+        
+        // 更新文件勾选框
+        const fileCheckbox = document.querySelector(`[data-file-name="${fileName}"] .file-checkbox`);
+        if (allSelected) {
+            fileCheckbox.classList.add('checked');
+        } else {
+            fileCheckbox.classList.remove('checked');
+        }
+        
+        // 更新工具项
+        tools.forEach(tool => {
+            const toolElement = document.querySelector(`[data-tool-name="${tool.name}"]`);
+            const toolCheckbox = toolElement.querySelector('.tool-checkbox');
+            const isSelected = this.selectedTools.includes(tool.name);
+            
+            if (isSelected) {
+                toolElement.classList.add('selected');
+                toolCheckbox.classList.add('checked');
+            } else {
+                toolElement.classList.remove('selected');
+                toolCheckbox.classList.remove('checked');
+            }
         });
     }
     
@@ -196,8 +327,28 @@ class MCPApp {
             checkbox.classList.add('checked');
         }
         
+        // 更新所属文件组的勾选状态
+        this.updateFileCheckboxForTool(toolName);
+        
         this.updateToolsCounter();
         this.updateToolsInfo();
+    }
+    
+    updateFileCheckboxForTool(toolName) {
+        const tool = this.availableTools.find(t => t.name === toolName);
+        if (!tool) return;
+        
+        const fileName = tool.package;
+        const toolsByFile = this.groupToolsByFile();
+        const tools = toolsByFile[fileName] || [];
+        const allSelected = tools.every(t => this.selectedTools.includes(t.name));
+        
+        const fileCheckbox = document.querySelector(`[data-file-name="${fileName}"] .file-checkbox`);
+        if (allSelected) {
+            fileCheckbox.classList.add('checked');
+        } else {
+            fileCheckbox.classList.remove('checked');
+        }
     }
     
     async applyToolSelection() {
@@ -373,19 +524,36 @@ class MCPApp {
     }
 
     filterTools(query) {
-        const items = document.querySelectorAll('.tool-item');
+        const fileGroups = document.querySelectorAll('.file-group');
         const lowerQuery = query.toLowerCase();
         
-        items.forEach(item => {
-            const name = item.querySelector('.tool-name').textContent.toLowerCase();
-            const description = item.querySelector('.tool-description').textContent.toLowerCase();
-            const packageName = item.querySelector('.tool-package').textContent.toLowerCase();
+        fileGroups.forEach(group => {
+            const fileName = group.dataset.fileName.toLowerCase();
+            const toolItems = group.querySelectorAll('.tool-item');
+            let hasVisibleTools = false;
             
-            const matches = name.includes(lowerQuery) || 
-                          description.includes(lowerQuery) || 
-                          packageName.includes(lowerQuery);
+            toolItems.forEach(item => {
+                const name = item.querySelector('.tool-name').textContent.toLowerCase();
+                const description = item.querySelector('.tool-description').textContent.toLowerCase();
+                
+                const matches = name.includes(lowerQuery) || 
+                              description.includes(lowerQuery) || 
+                              fileName.includes(lowerQuery);
+                
+                item.style.display = matches ? 'block' : 'none';
+                if (matches) hasVisibleTools = true;
+            });
             
-            item.style.display = matches ? 'block' : 'none';
+            // 显示/隐藏整个文件组
+            group.style.display = hasVisibleTools || fileName.includes(lowerQuery) ? 'block' : 'none';
+            
+            // 如果有搜索条件，自动展开显示匹配的文件组
+            if (query && (hasVisibleTools || fileName.includes(lowerQuery))) {
+                const fileTools = group.querySelector('.file-tools');
+                const expandIcon = group.querySelector('.expand-icon');
+                fileTools.classList.add('expanded');
+                expandIcon.classList.add('expanded');
+            }
         });
     }
     
@@ -435,6 +603,18 @@ class MCPApp {
                 })
             });
             
+            // 处理会话过期（410 Gone）
+            if (response.status === 410) {
+                const errorData = await response.json();
+                this.removeTypingIndicator(typingId);
+                this.addMessage('assistant', `⚠️ ${errorData.error}`);
+                // 清空当前会话ID，下次将创建新会话
+                this.sessionId = null;
+                this.isStreaming = false;
+                this.updateSendButtonState();
+                return;
+            }
+            
             // 从响应头获取会话ID（首次对话时）
             if (!this.sessionId) {
                 this.sessionId = response.headers.get('X-Session-ID');
@@ -466,7 +646,9 @@ class MCPApp {
         const decoder = new TextDecoder('utf-8');
         
         let assistantMessageElement = null;
-        let currentContent = '';
+        let thinkingMessageElement = null;  // 单独的思考消息元素
+        let currentThinkingContent = '';    // 当前思考内容
+        let currentAnswerContent = '';      // 当前回答内容
         let typingIndicatorRemoved = false; // 标记是否已移除思考中提示
         let isAfterToolCall = false; // 标记是否在工具调用之后
         
@@ -488,26 +670,39 @@ class MCPApp {
                             const parsed = JSON.parse(data);
                             console.log('收到流数据:', parsed);
                             
-                            if (parsed.type === 'content') {
-                                // 第一次收到内容时，移除思考中提示
+                            if (parsed.type === 'thinking') {
+                                // 处理思考内容
+                                if (!typingIndicatorRemoved) {
+                                    this.removeTypingIndicator(typingId);
+                                    typingIndicatorRemoved = true;
+                                }
+                                
+                                if (!thinkingMessageElement) {
+                                    thinkingMessageElement = this.addThinkingMessage('');
+                                }
+                                currentThinkingContent += parsed.content;
+                                this.updateMessageContent(thinkingMessageElement, currentThinkingContent);
+                            }
+                            else if (parsed.type === 'answer') {
+                                // 处理回答内容
                                 if (!typingIndicatorRemoved) {
                                     this.removeTypingIndicator(typingId);
                                     typingIndicatorRemoved = true;
                                 }
                                 
                                 // 如果是工具调用后的内容，创建新的消息元素
-                                if (isAfterToolCall && (!assistantMessageElement || currentContent.includes('思考过程'))) {
+                                if (isAfterToolCall && !assistantMessageElement) {
                                     assistantMessageElement = this.addMessage('assistant', '');
-                                    currentContent = '';
+                                    currentAnswerContent = '';
                                     isAfterToolCall = false;
                                 }
                                 
                                 if (!assistantMessageElement) {
                                     assistantMessageElement = this.addMessage('assistant', '');
                                 }
-                                currentContent += parsed.content;
-                                this.updateMessageContent(assistantMessageElement, currentContent);
-                            } 
+                                currentAnswerContent += parsed.content;
+                                this.updateMessageContent(assistantMessageElement, currentAnswerContent);
+                            }
                             else if (parsed.type === 'tool_calls') {
                                 console.log('处理工具调用:', parsed.tool_calls);
                                 // 如果有工具调用但还没移除思考中提示，移除它
@@ -517,6 +712,11 @@ class MCPApp {
                                 }
                                 this.showToolExecution(parsed.tool_calls);
                                 isAfterToolCall = true; // 标记后续内容需要新的消息元素
+                                // 重置消息元素，以便工具调用后的回答创建新消息
+                                assistantMessageElement = null;
+                                thinkingMessageElement = null;
+                                currentThinkingContent = '';
+                                currentAnswerContent = '';
                             } 
                             else if (parsed.type === 'tool_execution') {
                                 console.log('工具执行中:', parsed);
@@ -535,8 +735,8 @@ class MCPApp {
                                 if (!assistantMessageElement) {
                                     assistantMessageElement = this.addMessage('assistant', '');
                                 }
-                                currentContent += `\n\n❌ 错误: ${parsed.message}`;
-                                this.updateMessageContent(assistantMessageElement, currentContent);
+                                currentAnswerContent += `\n\n❌ 错误: ${parsed.message}`;
+                                this.updateMessageContent(assistantMessageElement, currentAnswerContent);
                             } 
                             else if (parsed.type === 'interrupted') {
                                 console.log('对话被中断');
@@ -580,6 +780,32 @@ class MCPApp {
         }
     }
     
+    addThinkingMessage(content) {
+        const messagesContainer = document.getElementById('chatMessages');
+        
+        // 移除欢迎消息
+        const welcomeMessage = messagesContainer.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant thinking fade-in';
+        
+        messageDiv.innerHTML = `
+            <div class="message-avatar">🤖</div>
+            <div class="message-content thinking-content">
+                <div class="thinking-header">💭 思考中...</div>
+                <div class="thinking-text">${this.formatMessage(content)}</div>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(messageDiv);
+        this.scrollToBottom();
+        
+        return messageDiv;
+    }
+    
     addMessage(role, content) {
         const messagesContainer = document.getElementById('chatMessages');
         
@@ -606,13 +832,40 @@ class MCPApp {
     }
     
     updateMessageContent(messageElement, content) {
-        const contentElement = messageElement.querySelector('.message-content');
-        contentElement.innerHTML = this.formatMessage(content);
+        // 检查是否为思考消息
+        if (messageElement.classList.contains('thinking')) {
+            const thinkingText = messageElement.querySelector('.thinking-text');
+            if (thinkingText) {
+                thinkingText.innerHTML = this.formatMessage(content);
+            }
+        } else {
+            const contentElement = messageElement.querySelector('.message-content');
+            contentElement.innerHTML = this.formatMessage(content);
+        }
         this.scrollToBottom();
     }
     
     formatMessage(content) {
         if (!content) return '';
+        
+        // 首先处理图片markdown ![alt](url)
+        content = content.replace(/!\[(.*?)\]\((.*?)\)/g, (match, alt, url) => {
+            // 检查是否是本地文件URL
+            if (url.includes('/api/files/')) {
+                return `<div class="file-display" style="text-align: center; margin: 16px 0;">
+                    <img src="${url}" alt="${alt}" style="max-width: 600px; max-height: 600px; width: auto; height: auto; border-radius: 8px; margin: 0 auto; display: block;">
+                    <div class="file-actions" style="margin-top: 12px; display: flex; justify-content: center; gap: 8px;">
+                        <a href="${url}" target="_blank" style="display: inline-block; padding: 6px 12px; background: var(--primary-color); color: white; border-radius: 6px; text-decoration: none; font-size: 12px;">查看详情</a>
+                        <a href="${url}?download=true" download style="display: inline-block; padding: 6px 12px; background: var(--success-color); color: white; border-radius: 6px; text-decoration: none; font-size: 12px;">下载</a>
+                    </div>
+                </div>`;
+            } else {
+                return `<img src="${url}" alt="${alt}" style="max-width: 600px; max-height: 600px; width: auto; height: auto; border-radius: 8px; margin: 8px 0; display: block; margin-left: auto; margin-right: auto;">`;
+            }
+        });
+        
+        // 处理链接markdown [text](url)
+        content = content.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color: var(--primary-color); text-decoration: none;">$1</a>');
         
         // 简单的 Markdown 格式化
         return content

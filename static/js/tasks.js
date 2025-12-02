@@ -245,35 +245,177 @@ function renderToolsList(tools) {
         return;
     }
     
-    toolsList.innerHTML = tools.map(tool => `
-        <div class="checkbox-item">
-            <input type="checkbox" id="tool-${tool.name}" name="tools" value="${tool.name}">
-            <label for="tool-${tool.name}">
-                <strong>${tool.name}</strong> - ${tool.description}
-            </label>
+    // 按文件分组
+    const toolsByFile = groupToolsByFile(tools);
+    
+    let html = '';
+    Object.keys(toolsByFile).forEach(fileName => {
+        const fileTools = toolsByFile[fileName];
+        html += createFileGroupElement(fileName, fileTools);
+    });
+    
+    toolsList.innerHTML = html;
+    
+    // 绑定事件
+    bindFileGroupEvents();
+}
+
+// 按文件分组
+function groupToolsByFile(tools) {
+    const grouped = {};
+    
+    tools.forEach(tool => {
+        const fileName = tool.package || 'unknown';
+        if (!grouped[fileName]) {
+            grouped[fileName] = [];
+        }
+        grouped[fileName].push(tool);
+    });
+    
+    return grouped;
+}
+
+// 创建文件组元素
+function createFileGroupElement(fileName, tools) {
+    return `
+        <div class="file-group" data-file-name="${fileName}">
+            <div class="file-header" onclick="toggleFileGroup('${fileName}')">
+                <div class="file-checkbox" onclick="event.stopPropagation(); toggleFileTools('${fileName}')"></div>
+                <div class="file-info">
+                    <div class="file-name">
+                        <svg class="expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9,18 15,12 9,6"></polyline>
+                        </svg>
+                        ${fileName}.py
+                    </div>
+                    <div class="file-tool-count">${tools.length} 个工具</div>
+                </div>
+            </div>
+            <div class="file-tools" id="file-tools-${fileName}">
+                ${tools.map(tool => `
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="tool-${tool.name}" name="tools" value="${tool.name}" data-file="${fileName}">
+                        <label for="tool-${tool.name}">
+                            <strong>${tool.name}</strong> - ${tool.description}
+                        </label>
+                    </div>
+                `).join('')}
+            </div>
         </div>
-    `).join('');
+    `;
+}
+
+// 切换文件组展开/折叠
+function toggleFileGroup(fileName) {
+    const fileTools = document.getElementById(`file-tools-${fileName}`);
+    const expandIcon = document.querySelector(`[data-file-name="${fileName}"] .expand-icon`);
+    
+    if (fileTools.classList.contains('expanded')) {
+        fileTools.classList.remove('expanded');
+        expandIcon.classList.remove('expanded');
+    } else {
+        fileTools.classList.add('expanded');
+        expandIcon.classList.add('expanded');
+    }
+}
+
+// 切换文件工具全选/取消全选
+function toggleFileTools(fileName) {
+    const fileGroup = document.querySelector(`[data-file-name="${fileName}"]`);
+    const checkboxes = fileGroup.querySelectorAll('input[type="checkbox"]');
+    const fileCheckbox = fileGroup.querySelector('.file-checkbox');
+    
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = !allChecked;
+    });
+    
+    if (allChecked) {
+        fileCheckbox.classList.remove('checked');
+    } else {
+        fileCheckbox.classList.add('checked');
+    }
+}
+
+// 绑定文件组事件
+function bindFileGroupEvents() {
+    // 绑定单个工具勾选事件
+    document.querySelectorAll('#toolsList input[type="checkbox"][name="tools"]').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const fileName = this.dataset.file;
+            updateFileCheckbox(fileName);
+        });
+    });
+}
+
+// 更新文件勾选框状态
+function updateFileCheckbox(fileName) {
+    const fileGroup = document.querySelector(`[data-file-name="${fileName}"]`);
+    const checkboxes = fileGroup.querySelectorAll('input[type="checkbox"][name="tools"]');
+    const fileCheckbox = fileGroup.querySelector('.file-checkbox');
+    
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    const someChecked = Array.from(checkboxes).some(cb => cb.checked);
+    
+    if (allChecked) {
+        fileCheckbox.classList.add('checked');
+    } else {
+        fileCheckbox.classList.remove('checked');
+    }
 }
 
 // 处理工具搜索
 function handleToolSearch(event) {
     const searchTerm = event.target.value.toLowerCase();
-    const toolsList = document.getElementById('toolsList');
     
     if (!availableTools || availableTools.length === 0) return;
     
-    const filteredTools = availableTools.filter(tool => 
-        tool.name.toLowerCase().includes(searchTerm) ||
-        tool.description.toLowerCase().includes(searchTerm) ||
-        (tool.package && tool.package.toLowerCase().includes(searchTerm))
-    );
+    // 按文件分组并过滤
+    const toolsByFile = groupToolsByFile(availableTools);
+    const filteredGroups = {};
     
-    if (filteredTools.length === 0) {
+    Object.keys(toolsByFile).forEach(fileName => {
+        const tools = toolsByFile[fileName];
+        const filteredTools = tools.filter(tool => 
+            tool.name.toLowerCase().includes(searchTerm) ||
+            tool.description.toLowerCase().includes(searchTerm) ||
+            fileName.toLowerCase().includes(searchTerm)
+        );
+        
+        if (filteredTools.length > 0 || fileName.toLowerCase().includes(searchTerm)) {
+            filteredGroups[fileName] = searchTerm ? filteredTools : tools;
+        }
+    });
+    
+    const toolsList = document.getElementById('toolsList');
+    
+    if (Object.keys(filteredGroups).length === 0) {
         toolsList.innerHTML = '<div class="empty-state">未找到匹配的工具</div>';
         return;
     }
     
-    renderToolsList(filteredTools);
+    // 重新渲染过滤后的文件组
+    let html = '';
+    Object.keys(filteredGroups).forEach(fileName => {
+        const fileTools = filteredGroups[fileName];
+        html += createFileGroupElement(fileName, fileTools);
+    });
+    
+    toolsList.innerHTML = html;
+    
+    // 如果有搜索条件，自动展开显示匹配的文件组
+    if (searchTerm) {
+        Object.keys(filteredGroups).forEach(fileName => {
+            const fileTools = document.getElementById(`file-tools-${fileName}`);
+            const expandIcon = document.querySelector(`[data-file-name="${fileName}"] .expand-icon`);
+            fileTools.classList.add('expanded');
+            expandIcon.classList.add('expanded');
+        });
+    }
+    
+    // 重新绑定事件
+    bindFileGroupEvents();
 }
 
 // 加载执行历史

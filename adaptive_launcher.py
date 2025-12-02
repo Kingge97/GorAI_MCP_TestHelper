@@ -12,6 +12,7 @@ import time
 import threading
 import signal
 import platform
+import socket
 from pathlib import Path
 
 class AdaptiveLauncher:
@@ -238,6 +239,47 @@ class AdaptiveLauncher:
             return ['open', '-a', 'Terminal']
         else:
             return ['xterm']
+
+    def get_mcp_port(self):
+        """从配置文件获取MCP服务器端口"""
+        try:
+            config_path = os.path.join(self.project_root, 'config.json')
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                return config.get('mcp_server', {}).get('port', 8888)
+        except Exception:
+            return 8888  # 默认端口
+
+    def wait_for_mcp_server(self, timeout=60):
+        """等待MCP服务器启动完成"""
+        port = self.get_mcp_port()
+        print(f"⏳ 等待MCP服务器在端口 {port} 启动...")
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                # 尝试连接到MCP服务器端口
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex(('localhost', port))
+                sock.close()
+
+                if result == 0:
+                    print(f"✅ MCP服务器已启动 (端口 {port})")
+                    return True
+
+            except Exception:
+                pass
+
+            # 显示等待进度
+            elapsed = int(time.time() - start_time)
+            if elapsed % 5 == 0 and elapsed > 0:
+                print(f"  等待中... ({elapsed}s)")
+
+            time.sleep(1)
+
+        print(f"❌ 等待MCP服务器启动超时 ({timeout}s)")
+        return False
             
                     
     def cleanup(self):
@@ -247,17 +289,22 @@ class AdaptiveLauncher:
     def start_all_services(self):
         """启动所有服务"""
         print("🚀 开始启动所有服务...")
-        
+
         # 启动MCP服务器
         mcp_process = self.run_script('mcp_server.py', ['server'])
         if not mcp_process:
             return False
-            
+
+        # 等待MCP服务器启动完成
+        if not self.wait_for_mcp_server():
+            print("❌ MCP服务器启动失败或超时")
+            return False
+
         # 启动Web应用
         web_process = self.run_script('app.py')
         if not web_process:
             return False
-            
+
         return True
         
     def run(self):

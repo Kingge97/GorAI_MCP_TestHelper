@@ -497,6 +497,30 @@ body {
     border-bottom-left-radius: 8px;
 }
 
+/* 思考消息样式 */
+.message.thinking .message-content {
+    background: linear-gradient(135deg, rgba(88, 86, 214, 0.05) 0%, rgba(0, 122, 255, 0.05) 100%);
+    border: 1px solid rgba(88, 86, 214, 0.2);
+    border-left: 3px solid var(--secondary-color);
+}
+
+.thinking-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--secondary-color);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.thinking-text {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-style: italic;
+    line-height: 1.5;
+}
+
 .tool-execution {
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
