@@ -55,8 +55,7 @@ class openai_chat_completetion_model(model_base):
 
         reasoning_content = ""
         content = ""
-        tool_calls = []
-        current_tool_call = None
+        tool_calls_dict = {}  # 使用字典按index追踪每个工具，避免并行工具调用时名称拼接错误
 
         for chunk in response:
             if chunk.choices:
@@ -92,35 +91,29 @@ class openai_chat_completetion_model(model_base):
                     for tool_call_delta in delta.tool_calls:
                         tool_index = tool_call_delta.index
                         
-                        # 判断是否是新工具：有index且与当前工具不同
-                        if tool_index is not None and (current_tool_call is None or tool_calls and len(tool_calls) != tool_index):
-                            # 保存前一个工具调用
-                            if current_tool_call is not None and current_tool_call['id']:
-                                tool_calls.append(current_tool_call)
-                            
-                            # 创建新工具调用
-                            current_tool_call = {
-                                "id": tool_call_delta.id or "",
-                                "type": "function",
-                                "function": {
-                                    "name": tool_call_delta.function.name or "",
-                                    "arguments": tool_call_delta.function.arguments or ""
+                        if tool_index is not None:
+                            if tool_index not in tool_calls_dict:
+                                # 新工具：创建新的工具调用记录
+                                tool_calls_dict[tool_index] = {
+                                    "id": tool_call_delta.id or "",
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool_call_delta.function.name or "",
+                                        "arguments": tool_call_delta.function.arguments or ""
+                                    }
                                 }
-                            }
-                        elif current_tool_call is not None:
-                            # 继续拼接当前工具的参数
-                            if tool_call_delta.id and not current_tool_call['id']:
-                                current_tool_call['id'] = tool_call_delta.id
-                            if tool_call_delta.function and tool_call_delta.function.name:
-                                current_tool_call['function']['name'] += tool_call_delta.function.name
-                            if tool_call_delta.function and tool_call_delta.function.arguments:
-                                current_tool_call['function']['arguments'] += tool_call_delta.function.arguments
+                            else:
+                                # 现有工具：继续拼接当前工具的数据
+                                current_tool = tool_calls_dict[tool_index]
+                                if tool_call_delta.id and not current_tool['id']:
+                                    current_tool['id'] = tool_call_delta.id
+                                if tool_call_delta.function and tool_call_delta.function.name:
+                                    current_tool['function']['name'] += tool_call_delta.function.name
+                                if tool_call_delta.function and tool_call_delta.function.arguments:
+                                    current_tool['function']['arguments'] += tool_call_delta.function.arguments
 
-        # 处理最后一个工具调用
-        if current_tool_call is not None:
-            # 只有在工具调用有id时才添加到列表（确保基本结构完整）
-            if current_tool_call['id']:
-                tool_calls.append(current_tool_call)
+        # 将字典转换为按index排序的列表，只保留有id的工具
+        tool_calls = [tool_calls_dict[i] for i in sorted(tool_calls_dict.keys()) if tool_calls_dict[i]['id']]
 
         print(tool_calls)
         # 如果有工具调用，返回工具信息

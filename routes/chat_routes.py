@@ -22,6 +22,7 @@ def chat():
     model = data.get('model', config_service.get_default_model())
     session_id = data.get('session_id')
     custom_system_prompt = data.get('system_prompt', '')
+    image_data = data.get('image')  # 获取图片数据
 
     if not message.strip():
         return jsonify({'error': '消息不能为空'}), 400
@@ -41,17 +42,38 @@ def chat():
         return jsonify({'error': str(e)}), 500
 
     # 构建包含历史的消息列表
-    system_prompt = tool_service.build_system_prompt()
-    if custom_system_prompt:
-        system_prompt = custom_system_prompt + "\n\n" + system_prompt
+    system_prompt = custom_system_prompt.strip()
 
-    messages = [{"role": "system", "content": system_prompt}]
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
 
     # 添加历史消息
     messages.extend(session['messages'])
 
     # 添加当前用户消息
-    messages.append({"role": "user", "content": message})
+    # 如果有图片，构建包含图片的消息格式（OpenAI vision API格式）
+    if image_data and image_data.get('data'):
+        # 构建多模态消息
+        user_message = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": message
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_data['data']  # base64数据
+                    }
+                }
+            ]
+        }
+        messages.append(user_message)
+    else:
+        # 纯文本消息
+        messages.append({"role": "user", "content": message})
 
     tools = tool_service.build_tools_definition() if tool_service.get_selected_tools() else None
 

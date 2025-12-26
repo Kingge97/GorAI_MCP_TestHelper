@@ -24,7 +24,7 @@ class MCPToolExecutor(ToolExecutor):
         """
         self.tool_service = tool_service
 
-    def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+    def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         执行工具调用
 
@@ -33,10 +33,10 @@ class MCPToolExecutor(ToolExecutor):
             arguments: 工具参数
 
         Returns:
-            str: 工具执行结果
+            Any: 工具执行结果（可以是结构化数据，用于多模态等场景）
         """
         result = self.tool_service.execute_tool(tool_name, arguments)
-        return str(result)
+        return result
 
 
 class ChatService(BaseService):
@@ -184,8 +184,109 @@ class ChatService(BaseService):
             'interrupt_flags': list(self.interrupt_flags.keys())
         }
 
+    def execute_ai_task_sync(self, messages: list, model: str, tools: Optional[list], executor) -> tuple[Optional[str], list]:
+        """执行AI任务（非流式，用于任务调度器）
+        
+        使用 chatToNextLoop 执行完整的对话循环，包括工具调用。
+        会修改传入的 messages 列表，添加助手回复和工具调用结果。
+        
+        参数:
+            messages: 消息列表（会被直接修改）
+            model: 模型名称
+            tools: 工具定义列表
+            executor: 工具执行器，需要有 execute_tool(tool_name, arguments) 方法
+        
+        返回:
+            tuple: (final_response, messages) - 最终回复内容和完整消息历史
+        """
+        try:
+            # 获取实际用于API调用的模型名称
+            actual_model_name = self.config_service.get_actual_model_name(model)
+
+            # 添加额外参数
+            extra_args = self.config_service.get_model_extra_args(model)
+
+            # 获取模型特定配置
+            model_config = self.config_service.get_model_config(model)
+            
+            # 创建GorAI_LLMClient模型实例
+            llm_model = create_model(
+                base_url=model_config['base_url'],
+                api_key=model_config['api_key'],
+                model_name=actual_model_name,
+                stream=True,  # chatToNextLoop 需要流式
+                extra_args=extra_args,
+                router=model_config.get('router', 'openai-chat')
+            )
+            
+            # 初始化工具（如果有）
+            if tools:
+                # 将MCP工具格式转换为GorAI_LLMClient所需格式
+                tool_dict = []
+                for tool in tools:
+                    tool_dict.append({
+                        "name": tool['function']['name'],
+                        "description": tool['function']['description'],
+                        "parameters": tool['function']['parameters'],
+                        "function": None
+                    })
+                llm_model.model_tool_init(tool_dict)
+
+            # 使用 chatToNextLoop 执行对话循环
+            # 注意：chatToNextLoop 会直接修改 messages 列表
+            final_response = None
+            has_error = False
+            error_message = ""
+            
+            # 定义简单的 encode_json 函数
+            def encode_json(data):
+                return json.dumps(data, ensure_ascii=False).encode('utf-8')
+            
+            # 定义中断检查函数（任务场景不需要中断）
+            def interrupt_check():
+                return False
+            
+            # 消费事件流，收集最终响应
+            for event_bytes in llm_model.chatToNextLoop(messages, executor, encode_json, interrupt_check):
+                # 解析事件
+                try:
+                    event_str = event_bytes.decode('utf-8')
+                    if event_str.startswith('data: '):
+                        event_data = json.loads(event_str[6:].strip())
+                        
+                        # 收集最终回答
+                        if event_data.get('type') == 'answer':
+                            if final_response is None:
+                                final_response = ''
+                            final_response += event_data.get('content', '')
+                        
+                        # 检测错误
+                        elif event_data.get('type') == 'error':
+                            has_error = True
+                            error_message = event_data.get('message', '未知错误')
+                            logger.error(f"AI任务执行错误: {error_message}")
+                            break
+                except Exception as e:
+                    logger.warning(f"解析事件失败: {e}")
+                    continue
+            
+            # 如果有错误，返回 None
+            if has_error:
+                return None, messages
+            
+            # 返回最终响应和完整消息历史
+            return final_response, messages
+
+        except Exception as e:
+            logger.error(f"AI任务执行失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None, messages
+
     def execute_ai_call(self, messages: list, model: str, tools: Optional[list] = None):
         """执行AI调用，返回AI响应对象（用于任务调度器）
+        
+        已废弃：此方法保留用于向后兼容，建议使用 execute_ai_task_sync
 
         参数:
             messages: 消息列表

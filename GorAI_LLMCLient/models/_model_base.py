@@ -115,6 +115,55 @@ class model_base(ABC):
                 print(f"原始参数: {arguments_str}")
                 return None
 
+    def _is_vision_content(self, result):
+        """
+        判断工具返回结果是否为视觉内容（图片或图文混合）
+        
+        符合规范的格式：
+        - 纯图片: [{"type": "image_url", "image_url": {"url": "图片URL"}}]
+        - 图文混合: [{"type": "text", "text": "文字"}, {"type": "image_url", "image_url": {"url": "图片URL"}}]
+        
+        Args:
+            result: 工具执行结果
+            
+        Returns:
+            bool: 如果是符合规范的视觉内容返回True，否则返回False
+        """
+        # 如果结果不是列表，则不符合规范
+        if not isinstance(result, list):
+            return False
+        
+        # 如果列表为空，则不符合规范
+        if len(result) == 0:
+            return False
+        
+        # 检查列表中的每个元素是否符合规范
+        for item in result:
+            # 每个元素必须是字典且包含type字段
+            if not isinstance(item, dict) or 'type' not in item:
+                return False
+            
+            item_type = item.get('type')
+            
+            # 如果是text类型，必须包含text字段
+            if item_type == 'text':
+                if 'text' not in item:
+                    return False
+            
+            # 如果是image_url类型，必须包含image_url字段和其中的url字段
+            elif item_type == 'image_url':
+                if 'image_url' not in item or not isinstance(item['image_url'], dict):
+                    return False
+                if 'url' not in item['image_url']:
+                    return False
+            
+            # 如果type既不是text也不是image_url，则不符合规范
+            else:
+                return False
+        
+        # 所有检查都通过，符合规范
+        return True
+
     def chatToNextLoop(self, messages, executor, encode_json=None, interrupt_check=None):
         """
         对话循环方法，从用户发起对话到下一次等待用户发送
@@ -345,7 +394,18 @@ class model_base(ABC):
 
                 print(f"工具执行结果: {result}")
 
-                # 发送工具结果
+                # 判断结果类型并构建消息
+                if self._is_vision_content(result):
+                    # 符合视觉内容规范，序列化为JSON字符串
+                    # 注意：OpenAI API的tool消息content字段只接受字符串
+                    # 但我们可以将结构化数据序列化后传递，模型能理解JSON格式的视觉内容
+                    tool_result_content = result
+                    print(f"检测到视觉内容，使用dict格式")
+                else:
+                    # 普通文本结果，使用字符串格式
+                    tool_result_content = str(result)
+
+                # 发送工具结果（前端显示）
                 yield b"data: " + encode_json({'type': 'tool_result', 'tool_name': tool_name, 'tool_call_id': tool_call_id, 'result': str(result)}) + b"\n\n"
 
                 # 更新消息历史
@@ -354,7 +414,8 @@ class model_base(ABC):
                     "function": {"arguments": tool["arguments"], "name": tool["name"]},
                     "type": 'function'
                 })
-                messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
+                # 根据结果类型构建工具消息
+                messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": tool_result_content})
 
             except Exception as e:
                 error_msg = f"工具执行错误: {str(e)}"

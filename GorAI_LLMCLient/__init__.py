@@ -4,7 +4,7 @@ GorAI LLM Client
 
 A unified LLM client supporting multiple providers (OpenAI, Anthropic, etc.)
 
-Version: 0.3.0
+Version: 0.3.2
 
 Example usage:
     >>> from GorAI_LLMCLient import create_model
@@ -25,7 +25,7 @@ Example usage:
     ...     print(event)
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.2"
 
 # Re-export the main functions from models
 from .models import create_model, model_base, openai_chat_completetion_model, anthropic_model

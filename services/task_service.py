@@ -397,63 +397,30 @@ class TaskService(BaseService):
         return tools if tools else None
 
     def _execute_ai_task(self, messages: list, model: str, tools: Optional[list]) -> tuple[Optional[str], list]:
-        """执行AI任务，支持工具调用后继续对话"""
+        """执行AI任务，支持工具调用后继续对话
+        
+        使用 ChatService.execute_ai_task_sync 方法，该方法内部调用 chatToNextLoop，
+        自动处理完整的对话循环，包括工具调用和多轮对话。
+        """
         try:
-            final_response = None
+            # 复制消息列表，避免修改原始消息
             current_messages = messages.copy()
-
-            while True:
-                # 使用ChatService执行AI调用
-                response = self.chat_service.execute_ai_call(current_messages, model, tools)
-
-                if not response:
-                    break
-
-                # 如果没有工具调用，直接返回内容
-                if not response.tool_calls:
-                    final_response = response.content
-                    current_messages.append({
-                        "role": "assistant",
-                        "content": final_response
-                    })
-                    break
-
-                # 有工具调用，先添加助手消息
-                current_messages.append({
-                    "role": "assistant",
-                    "tool_calls": [tc.dict() for tc in response.tool_calls]
-                })
-
-                # 执行所有工具调用
-                for tool_call in response.tool_calls:
-                    try:
-                        tool_name = tool_call.function.name
-                        tool_args = json.loads(tool_call.function.arguments)
-
-                        logger.info(f"执行任务工具调用: {tool_name}")
-                        result = self.tool_service.execute_tool(tool_name, tool_args)
-
-                        current_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": str(result)
-                        })
-
-                    except Exception as e:
-                        error_msg = f"工具执行错误: {str(e)}"
-                        logger.error(f"工具调用失败: {e}")
-                        current_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": error_msg
-                        })
-
-                # 继续循环，让AI处理工具调用结果
-
+            
+            # 使用 ChatService 的 execute_ai_task_sync 方法
+            # 该方法内部使用 chatToNextLoop，自动处理工具调用循环
+            final_response, current_messages = self.chat_service.execute_ai_task_sync(
+                current_messages,
+                model,
+                tools,
+                self.tool_service  # 传入 tool_service 作为 executor
+            )
+            
             return final_response, current_messages
 
         except Exception as e:
             logger.error(f"AI任务执行失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None, messages
 
     def _extract_tool_calls(self, messages: list) -> list[Dict[str, Any]]:
