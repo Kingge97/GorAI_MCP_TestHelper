@@ -355,7 +355,32 @@ class MCPClient:
         request_data = json.dumps(request)
         self.socket.send(request_data.encode('utf-8'))
         
-        response_data = self.socket.recv(65535).decode('utf-8')
+        # 循环读取直到收集完所有数据
+        response_data = ""
+        chunk_size = 4096  # 每次读取4KB
+        
+        while True:
+            try:
+                chunk = self.socket.recv(chunk_size).decode('utf-8')
+                if not chunk:
+                    # 连接关闭，没有更多数据
+                    break
+                
+                response_data += chunk
+                
+                # 尝试解析JSON，如果成功说明数据已完整
+                try:
+                    result = json.loads(response_data)
+                    return result
+                except json.JSONDecodeError:
+                    # JSON不完整，继续读取
+                    continue
+                    
+            except socket.timeout:
+                # 如果设置了超时且超时了，尝试解析已有数据
+                break
+        
+        # 如果循环结束还没成功解析，最后尝试一次
         return json.loads(response_data)
     
     def list_tools(self) -> List[Dict]:

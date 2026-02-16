@@ -20,7 +20,7 @@ class MCPApp {
         this.toolCallCounter = 0;
         
         // 添加图片上传相关状态
-        this.currentImage = null;  // 存储当前选择的图片 {name, size, base64, mimeType}
+        this.images = [];  // 存储多张图片 [{name, size, base64, mimeType}, ...]
         
         this.init();
     }
@@ -523,11 +523,6 @@ class MCPApp {
             this.handleImageUpload(e);
         });
         
-        // 移除图片按钮
-        document.getElementById('removeImageButton').addEventListener('click', () => {
-            this.removeImage();
-        });
-        
         // 点击聊天区域关闭弹窗
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('modal')) {
@@ -581,48 +576,51 @@ class MCPApp {
     
     // 处理图片上传
     async handleImageUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
         
-        // 检查文件类型
         const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
-        if (!validTypes.includes(file.type)) {
-            this.showError('仅支持 PNG, JPG, JPEG, WEBP, GIF 格式的图片');
-            event.target.value = ''; // 清空输入
-            return;
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        
+        // 遍历所有选中的文件
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            
+            // 检查文件类型
+            if (!validTypes.includes(file.type)) {
+                this.showError(`文件 "${file.name}" 格式不支持，仅支持 PNG, JPG, JPEG, WEBP, GIF 格式`);
+                continue;
+            }
+            
+            // 检查文件大小
+            if (file.size > maxSize) {
+                this.showError(`文件 "${file.name}" 超过大小限制（5MB），当前大小：${(file.size / 1024 / 1024).toFixed(2)}MB`);
+                continue;
+            }
+            
+            try {
+                // 读取文件并转换为base64
+                const base64 = await this.fileToBase64(file);
+                
+                // 添加到图片数组
+                this.images.push({
+                    id: Date.now() + '_' + i, // 唯一ID
+                    name: file.name,
+                    size: file.size,
+                    base64: base64,
+                    mimeType: file.type
+                });
+            } catch (error) {
+                console.error('图片读取失败:', error);
+                this.showError(`读取文件 "${file.name}" 失败，请重试`);
+            }
         }
         
-        // 检查文件大小 (5MB = 5 * 1024 * 1024 字节)
-        const maxSize = 5 * 1024 * 1024;
-        if (file.size > maxSize) {
-            this.showError(`图片大小超过限制（5MB），当前大小：${(file.size / 1024 / 1024).toFixed(2)}MB`);
-            event.target.value = ''; // 清空输入
-            return;
-        }
+        // 显示预览
+        this.showImagePreview();
         
-        try {
-            // 读取文件并转换为base64
-            const base64 = await this.fileToBase64(file);
-            
-            // 存储图片信息
-            this.currentImage = {
-                name: file.name,
-                size: file.size,
-                base64: base64,
-                mimeType: file.type
-            };
-            
-            // 显示预览
-            this.showImagePreview();
-            
-            // 清空输入，以便下次可以选择同一文件
-            event.target.value = '';
-            
-        } catch (error) {
-            console.error('图片读取失败:', error);
-            this.showError('图片读取失败，请重试');
-            event.target.value = '';
-        }
+        // 清空输入，以便下次可以选择同一文件
+        event.target.value = '';
     }
     
     // 将文件转换为Base64
@@ -640,31 +638,71 @@ class MCPApp {
     
     // 显示图片预览
     showImagePreview() {
-        if (!this.currentImage) return;
-        
         const container = document.getElementById('imagePreviewContainer');
-        const preview = document.getElementById('imagePreview');
-        const fileName = document.getElementById('imageFileName');
-        const fileSize = document.getElementById('imageFileSize');
         
-        preview.src = this.currentImage.base64;
-        fileName.textContent = this.currentImage.name;
-        fileSize.textContent = `${(this.currentImage.size / 1024).toFixed(2)} KB`;
+        if (this.images.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        
+        // 清空预览容器并重新创建
+        container.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <span style="font-size: 13px; color: var(--text-secondary);">📷 已选择 ${this.images.length} 张图片</span>
+                <button id="clearAllImagesButton" style="background: none; border: none; color: var(--error-color); cursor: pointer; font-size: 13px; padding: 4px 8px;" title="清空所有图片">清空全部</button>
+            </div>
+            <div id="imagesGrid" style="display: flex; gap: 8px; flex-wrap: wrap; max-height: 200px; overflow-y: auto;"></div>
+        `;
+        
+        const imagesGrid = container.querySelector('#imagesGrid');
+        
+        // 为每张图片创建预览卡片
+        this.images.forEach((image, index) => {
+            const imageCard = document.createElement('div');
+            imageCard.className = 'image-preview-card';
+            imageCard.style.cssText = 'position: relative; width: 120px; border: 1px solid var(--border-color); border-radius: var(--radius-small); padding: 8px; background: var(--background-tertiary);';
+            
+            imageCard.innerHTML = `
+                <button class="remove-image-btn" data-image-id="${image.id}" style="position: absolute; top: 4px; right: 4px; background: var(--error-color); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; line-height: 1;" title="移除">×</button>
+                <img src="${image.base64}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px; margin-bottom: 4px;" />
+                <div style="font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${image.name}">${image.name}</div>
+                <div style="font-size: 10px; color: var(--text-secondary);">${(image.size / 1024).toFixed(1)} KB</div>
+            `;
+            
+            imagesGrid.appendChild(imageCard);
+        });
+        
+        // 绑定移除单个图片事件
+        container.querySelectorAll('.remove-image-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const imageId = e.target.dataset.imageId;
+                this.removeImage(imageId);
+            });
+        });
+        
+        // 绑定清空全部事件
+        const clearAllBtn = container.querySelector('#clearAllImagesButton');
+        if (clearAllBtn) {
+            clearAllBtn.addEventListener('click', () => {
+                this.clearAllImages();
+            });
+        }
         
         container.style.display = 'block';
     }
     
-    // 移除图片
-    removeImage() {
-        this.currentImage = null;
-        
+    // 移除单张图片
+    removeImage(imageId) {
+        this.images = this.images.filter(img => img.id !== imageId);
+        this.showImagePreview();
+    }
+    
+    // 清空所有图片
+    clearAllImages() {
+        this.images = [];
         const container = document.getElementById('imagePreviewContainer');
         container.style.display = 'none';
-        
-        // 清空预览
-        document.getElementById('imagePreview').src = '';
-        document.getElementById('imageFileName').textContent = '';
-        document.getElementById('imageFileSize').textContent = '';
+        container.innerHTML = '';
     }
     
     async sendMessage() {
@@ -672,7 +710,7 @@ class MCPApp {
         const message = input.value.trim();
         
         // 检查是否有文字消息或图片
-        if ((!message && !this.currentImage) || !this.currentModel || this.isStreaming) {
+        if ((!message && this.images.length === 0) || !this.currentModel || this.isStreaming) {
             return;
         }
         
@@ -683,21 +721,21 @@ class MCPApp {
         this.updateSendButtonState();
         
         // 准备发送的内容：文字 + 图片（如果有）
-        let messageContent = message || '请分析这张图片'; // 如果没有文字，默认提示词
-        let imageData = null;
+        let messageContent = message || (this.images.length > 0 ? '请分析这些图片' : ''); // 如果没有文字，默认提示词
+        let imagesData = null;
         
-        if (this.currentImage) {
-            imageData = {
-                data: this.currentImage.base64,
-                mimeType: this.currentImage.mimeType
-            };
+        if (this.images.length > 0) {
+            imagesData = this.images.map(img => ({
+                data: img.base64,
+                mimeType: img.mimeType
+            }));
         }
         
         // 显示用户消息（包含图片预览）
-        this.addMessage('user', messageContent, imageData);
+        this.addMessage('user', messageContent, imagesData);
         
         // 清除图片预览（已经发送）
-        this.removeImage();
+        this.clearAllImages();
         
         // 显示打字指示器
         const typingId = this.showTypingIndicator();
@@ -716,7 +754,7 @@ class MCPApp {
                     model: this.currentModel,
                     session_id: this.sessionId,  // 发送会话ID
                     system_prompt: this.systemPrompt,  // 发送系统提示词
-                    image: imageData  // 发送图片数据
+                    images: imagesData  // 发送多张图片数据
                 })
             });
             
@@ -923,7 +961,7 @@ class MCPApp {
         return messageDiv;
     }
     
-    addMessage(role, content, imageData = null) {
+    addMessage(role, content, imagesData = null) {
         const messagesContainer = document.getElementById('chatMessages');
         
         // 移除欢迎消息
@@ -939,11 +977,11 @@ class MCPApp {
         
         // 如果有图片，在内容中显示
         let messageContent = this.formatMessage(content);
-        if (imageData && imageData.data) {
-            const imageHtml = `<div style="margin-top: 12px; margin-bottom: 8px;">
-                <img src="${imageData.data}" style="max-width: 300px; max-height: 300px; border-radius: 8px; object-fit: contain; display: block;" alt="上传的图片" />
-            </div>`;
-            messageContent = imageHtml + messageContent;
+        if (imagesData && imagesData.length > 0) {
+            const imagesHtml = imagesData.map(img => 
+                `<img src="${img.data}" style="max-width: 250px; max-height: 250px; border-radius: 8px; object-fit: contain; display: inline-block; margin: 4px;" alt="上传的图片" />`
+            ).join('');
+            messageContent = `<div style="margin-top: 8px; margin-bottom: 8px;">${imagesHtml}</div>` + messageContent;
         }
         
         messageDiv.innerHTML = `

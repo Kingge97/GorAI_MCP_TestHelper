@@ -9,6 +9,11 @@
 - ✅ 聊天记录保存与载入
 - ✅ 任务托管系统（定时执行）
 - ✅ 多模型切换与参数配置
+- ✅ 多图片上传支持（Vision API）
+- ✅ 系统提示词自定义
+- ✅ 对话中断功能
+- ✅ 思考链（Chain of Thought）支持
+- ✅ 任务执行记录管理与下载
 - 🚧 多AI串联/并联工作流（规划中）
 
 ---
@@ -17,11 +22,16 @@
 
 ### 技术栈
 ```
-后端框架: Flask 2.3.2
+后端框架: Flask 3.0.0
 跨域支持: Flask-CORS 4.0.0
-LLM调用: 本地封装的 GorAI_LLMClient 包
-模板引擎: Jinja2 3.1.2
+Web工具: Werkzeug 3.0.1
+LLM调用: 本地封装的 GorAI_LLMClient 包 (v0.3.1)
+模板引擎: Jinja2 (Flask内置)
 Python版本: >= 3.12.8
+
+数据处理: numpy>=1.24.0, pandas>=2.0.0
+数据可视化: matplotlib>=3.7.0, seaborn>=0.12.0
+AI SDK: openai>=1.93.0, anthropic>=0.39.0
 ```
 
 ### 架构设计
@@ -55,9 +65,16 @@ Python版本: >= 3.12.8
 
 ```
 项目根目录/
-├── GorAI_LLMClient/          # 本地LLM客户端封装
+├── GorAI_LLMClient/          # 本地LLM客户端封装 (v0.3.1)
+│   ├── __init__.py           # 包入口
+│   ├── executor.py           # 工具执行器
 │   ├── message/              # 消息格式封装
-│   └── models/               # 模型封装 (OpenAI/Anthropic)
+│   └── models/               # 模型封装
+│       ├── _model_base.py        # 模型基类
+│       ├── _openai_model.py      # OpenAI兼容模型
+│       ├── _anthropic_model.py   # Anthropic Claude模型
+│       ├── _deepseek_openai_model.py  # DeepSeek模型
+│       └── _minimax_anthropic_model.py # MiniMax模型
 │
 ├── chatSave/                 # 普通聊天记录 (JSON)
 ├── missionChatSave/          # 任务聊天记录 (JSON)
@@ -79,13 +96,13 @@ Python版本: >= 3.12.8
 │   └── session_service.py    # 会话管理服务
 │
 ├── tools/                    # MCP工具实现目录 ⭐
+│   ├── __init__.py           # 工具包初始化
 │   ├── calculator.py         # 计算器工具
 │   ├── file_tools.py         # 文件操作工具
 │   ├── time_tools.py         # 时间工具
 │   ├── text_tools.py         # 文本处理工具
 │   ├── system_tools.py       # 系统工具
-│   ├── chart_tools.py        # 图表工具
-│   └── virtualFactory.py     # 虚拟工厂工具
+│   └── chart_tools.py        # 图表工具
 │
 ├── static/                   # 前端静态资源
 │   ├── css/style.css
@@ -310,14 +327,17 @@ http://localhost:5000/
 ## API接口说明
 
 ### 聊天接口
-- `POST /chat` - 发送聊天消息（支持流式/非流式）
-- `GET /history` - 获取聊天历史
-- `POST /save` - 保存当前会话
-- `POST /load` - 加载历史会话
+- `POST /api/chat` - 发送聊天消息（支持流式/非流式，支持多图片上传）
+- `POST /api/chat/clear` - 清空当前会话历史
+- `POST /api/chat/save` - 保存当前会话到文件
+- `POST /api/chat/load` - 从文件加载历史会话
+- `GET /api/chat/list` - 获取已保存的会话列表
+- `POST /api/chat/delete` - 删除已保存的会话文件
+- `POST /api/chat/interrupt` - 中断当前正在进行的对话
 
 ### 工具接口
-- `GET /tools` - 获取可用工具列表
-- `POST /tools/select` - 设置选中的工具
+- `GET /api/tools` - 获取可用工具列表
+- `POST /api/tools/select` - 设置选中的工具
 
 ### 任务接口
 - `GET /api/tasks` - 获取所有任务
@@ -325,10 +345,19 @@ http://localhost:5000/
 - `POST /api/tasks/<task_id>/toggle` - 启停任务
 - `DELETE /api/tasks/<task_id>` - 删除任务
 - `POST /api/tasks/<task_id>/execute` - 手动执行任务
+- `GET /api/tasks/<task_id>/records` - 获取任务执行记录
+- `GET /api/tasks/<task_id>/records/<record_id>` - 获取执行记录详情
+- `GET /api/tasks/<task_id>/records/<record_id>/download` - 下载执行记录
 
 ### 配置接口
-- `GET /config` - 获取配置信息
-- `POST /config/model` - 切换模型
+- `GET /api/config` - 获取配置信息
+- `POST /api/config/model` - 切换模型
+
+### 调试接口
+- `GET /api/debug/status` - 获取系统调试状态信息
+
+### 文件接口
+- `GET /api/files/<path>` - 获取静态文件（如生成的图表等）
 
 ---
 
@@ -390,7 +419,12 @@ if router == "openai-chat":
     client = OpenAIModel(...)
 elif router == "anthropic":
     client = AnthropicModel(...)
+# 支持更多模型扩展...
 ```
+
+**已支持的模型类型**：
+- `openai-chat`: OpenAI兼容API（GPT、Qwen、DeepSeek等）
+- `anthropic`: Anthropic Claude API（Claude、MiniMax等）
 
 ---
 
@@ -409,9 +443,13 @@ elif router == "anthropic":
 查看 `missionChatSave/` 目录下对应任务的JSON记录文件。
 
 ### Q4: 支持哪些LLM提供商？
-当前支持：
-- OpenAI兼容接口（通过 `openai-chat` router）
-- Anthropic Claude（通过 `anthropic` router）
+当前支持多种LLM提供商：
+- **OpenAI兼容接口**（通过 `openai-chat` router）
+  - 阿里云千问 (Qwen) 系列
+  - DeepSeek 系列（支持思考链输出）
+  - 其他OpenAI API兼容服务
+- **Anthropic Claude**（通过 `anthropic` router）
+- **MiniMax**（通过 `anthropic` router，使用Anthropic兼容接口）
 
 ### Q5: 聊天记录保存在哪里？
 - 普通聊天：`chatSave/chat_<时间戳>.json`
@@ -442,6 +480,6 @@ elif router == "anthropic":
 - 查看浏览器控制台定位前端问题
 
 
-**文档版本**: v1.0  
-**最后更新**: 2025-12-2  
+**文档版本**: v0.1.9.7  
+**最后更新**: 2026-02-16  
 **维护者**: Kingge97

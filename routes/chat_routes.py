@@ -22,7 +22,7 @@ def chat():
     model = data.get('model', config_service.get_default_model())
     session_id = data.get('session_id')
     custom_system_prompt = data.get('system_prompt', '')
-    image_data = data.get('image')  # 获取图片数据
+    images_data = data.get('images')  # 获取多张图片数据（数组）
 
     if not message.strip():
         return jsonify({'error': '消息不能为空'}), 400
@@ -53,22 +53,28 @@ def chat():
 
     # 添加当前用户消息
     # 如果有图片，构建包含图片的消息格式（OpenAI vision API格式）
-    if image_data and image_data.get('data'):
-        # 构建多模态消息
-        user_message = {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": message
-                },
-                {
+    if images_data and isinstance(images_data, list) and len(images_data) > 0:
+        # 构建多模态消息（支持多张图片）
+        content = [
+            {
+                "type": "text",
+                "text": message
+            }
+        ]
+        
+        # 添加所有图片
+        for img_data in images_data:
+            if img_data and img_data.get('data'):
+                content.append({
                     "type": "image_url",
                     "image_url": {
-                        "url": image_data['data']  # base64数据
+                        "url": img_data['data']  # base64数据
                     }
-                }
-            ]
+                })
+        
+        user_message = {
+            "role": "user",
+            "content": content
         }
         messages.append(user_message)
     else:

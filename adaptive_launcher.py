@@ -136,54 +136,6 @@ class AdaptiveLauncher:
             
         print(f"项目根目录: {self.project_root}")
         
-    def check_dependencies(self):
-        """检查并安装依赖"""
-        print("检查依赖包...")
-        
-        requirements_file = os.path.join(self.project_root, 'requirements.txt')
-        if not os.path.exists(requirements_file):
-            print("⚠️  未找到requirements.txt，跳过依赖检查")
-            return True
-            
-        try:
-            # 读取requirements
-            with open(requirements_file, 'r', encoding='utf-8') as f:
-                requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-                
-            if not requirements:
-                print("✅ 无依赖需要安装")
-                return True
-                
-            # 检查每个包
-            missing_packages = []
-            for req in requirements:
-                package_name = req.split('==')[0].split('>=')[0].split('<=')[0]
-                try:
-                    subprocess.run(
-                        [self.python_executable, '-c', f'import {package_name}'],
-                        capture_output=True,
-                        timeout=5
-                    )
-                except subprocess.CalledProcessError:
-                    missing_packages.append(req)
-                    
-            if missing_packages:
-                print(f"📦 需要安装 {len(missing_packages)} 个包...")
-                for package in missing_packages:
-                    print(f"  安装 {package}...")
-                    subprocess.run([
-                        self.python_executable, '-m', 'pip', 'install', package
-                    ], check=True)
-                print("✅ 依赖安装完成")
-            else:
-                print("✅ 所有依赖已安装")
-                
-            return True
-            
-        except Exception as e:
-            print(f"❌ 依赖检查失败: {e}")
-            return False
-            
     def run_script(self, script_name, args=None):
         """运行指定的Python脚本"""
         if args is None:
@@ -324,10 +276,6 @@ class AdaptiveLauncher:
             
         print(f"🐍 Python版本: {subprocess.run([self.python_executable, '--version'], capture_output=True, text=True).stdout.strip()}")
         
-        # 检查依赖
-        if not self.check_dependencies():
-            return False
-            
         # 检查必要文件
         required_files = ['mcp_server.py', 'app.py', 'config.json']
         missing_files = [f for f in required_files if not os.path.exists(os.path.join(self.project_root, f))]
